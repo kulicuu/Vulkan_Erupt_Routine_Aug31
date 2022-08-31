@@ -70,7 +70,8 @@ pub unsafe fn routine
     let window = WindowBuilder::new()
         .with_title(TITLE)
         .with_resizable(true)
-        .with_maximized(true)
+        // .with_maximized(true)
+        .with_inner_size(winit::dpi::LogicalSize::new(2000, 2000))
         .build(&event_loop)
         .unwrap();
 
@@ -126,7 +127,6 @@ pub unsafe fn routine
                     | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
             )
             .pfn_user_callback(Some(debug_callback));
-
         instance.create_debug_utils_messenger_ext(&messenger_info, None).expect("problem creating debug util.");
     } else {
         Default::default()
@@ -207,9 +207,7 @@ pub unsafe fn routine
     })
     .expect("No suitable physical device found");
 
-
     println!("\n\n\nUsing physical device: {:?}\n\n\n", CStr::from_ptr(device_properties.device_name.as_ptr()));
-
 
     let queue_info = vec![vk::DeviceQueueCreateInfoBuilder::new()
         .queue_family_index(queue_family)
@@ -286,10 +284,85 @@ pub unsafe fn routine
             })
             .collect();
     
-        let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
-                .queue_family_index(queue_family)
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let command_pool = device_locked.create_command_pool(&command_pool_info, None).unwrap();
+
+        // At this point we have swapchain.
+
+        //https://www.intel.com/content/www/us/en/developer/articles/training/practical-approach-to-vulkan-part-1.html
+        // "": Vulkan applications:
+        // Acquire a swapchain image, render into the acquired image, present the image to the screen, repeat.
+        // To complete any task we need a command buffer, these are grouped into pools.
+        // Acquisition of an image to render into involves a semaphore or a fence.
+
+
+        // ""
+        // At least one command buffer. This buffer is required to record and submit rendering commands to the graphics hardware.
+        // Image available (image acquired) semaphore. This semaphore gets signaled by a presentation engine and is used to synchronize rendering with swap chain image acquisition.
+        // Rendering finished (ready to present) semaphore. This semaphore gets signaled when processing of the command buffer is finished and is used to synchronize presentation with the rendering process.
+        // Fence. A fence indicates when the rendering of a whole frame is finished and informs our application when it can reuse resources from a given frame.
+
+
+        
+
+        //https://stackoverflow.com/questions/53438692/creating-multiple-command-pools-per-thread-in-vulkan
+        // One command pool per frame per thread.
+        // So multiple threads just for rendering.  Plus the state management thread(s).
+
+        //https://stackoverflow.com/questions/73502161/vulkan-why-have-multiple-command-buffers-per-pool
+        // Multiple command buffers per pool.
+
+
+        // Question: Do semaphores and fences need to be shared across threads? Or can threads maintain independent sets?
+
+
+        let info = vk::SemaphoreCreateInfoBuilder::new();
+        let image_available_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
+            .map(|_| Arc::new(Mutex::new(
+                device_locked.create_semaphore(&info, None).unwrap())
+            ))
+            .collect();
+        let ias = Arc::new(image_available_semaphores);
+        let render_finished_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
+            .map(|_| 
+                Arc::new(Mutex::new(
+                    device_locked.create_semaphore(&info, None).unwrap())
+                ))
+            .collect();
+        let rfs = Arc::new(render_finished_semaphores);
+        let info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
+        let in_flight_fences: Vec<_> = (0..FRAMES_IN_FLIGHT)
+            .map(|_| 
+                Arc::new(Mutex::new(
+                    device_locked.create_fence(&info, None).unwrap())
+                ))
+            .collect();
+        let iff = Arc::new(in_flight_fences);
+
+
+
+
+
+
+        // After we do the structure foundation as above, we can focus on the render loop and render structure.
+        // Attachments, pipeline, depth, shader config, vertex buffers, index buffers
+
+        // swapchain framebuffers 
+
+        // pipeline, swapchin framebuffer, shader objects,
+
+        // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
+
+    let frame_resources = Arc::new(Mutex::new(
+        FrameResources {
+            name: vec![3],
+        }
+    ));
+    
+
+
+
 
 }
 
+struct FrameResources {
+    name: Vec<u32>,
+}
