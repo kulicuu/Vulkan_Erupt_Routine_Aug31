@@ -1,8 +1,3 @@
-
-
-
-
-
 use cgmath::{Deg, Rad, Matrix4, Point3, Vector3, Vector4};
 use closure::closure;
 
