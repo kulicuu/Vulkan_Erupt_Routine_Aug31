@@ -218,10 +218,11 @@ pub unsafe fn routine
         .enabled_features(&features)
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers);
-    let device  = Arc::new(Mutex::new(DeviceLoader::new(&instance, physical_device, &device_info).unwrap()));
+    // let device  = Arc::new(Mutex::new(DeviceLoader::new(&instance, physical_device, &device_info).unwrap()));
+    let device  = Arc::new(DeviceLoader::new(&instance, physical_device, &device_info).unwrap());
 
-    let mut dl = device.lock().unwrap();
-    let queue = dl.get_device_queue(queue_family, 0);
+    // let mut dee = device.lock().unwrap();
+    let queue = device.get_device_queue(queue_family, 0);
 
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(physical_device, surface).unwrap();
     let mut image_count = surface_caps.min_image_count + 1;
@@ -256,125 +257,153 @@ pub unsafe fn routine
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::default());
 
-        let swapchain = dl.create_swapchain_khr(&swapchain_info, None).unwrap();
-        let swapchain_images = dl.get_swapchain_images_khr(swapchain, None).unwrap();
-        let swapchain_image_views: Vec<_> = swapchain_images
-            .iter()
-            .map(|swapchain_image| {
-                let image_view_info = vk::ImageViewCreateInfoBuilder::new()
-                    .image(*swapchain_image)
-                    .view_type(vk::ImageViewType::_2D)
-                    .format(format.format)
-                    .components(vk::ComponentMapping {
-                        r: vk::ComponentSwizzle::IDENTITY,
-                        g: vk::ComponentSwizzle::IDENTITY,
-                        b: vk::ComponentSwizzle::IDENTITY,
-                        a: vk::ComponentSwizzle::IDENTITY,
-                    })
-                    .subresource_range(
-                        vk::ImageSubresourceRangeBuilder::new()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1)
-                            .build(),
-                    );
-                dl.create_image_view(&image_view_info, None).unwrap()
-            })
-            .collect();
+    let swapchain = device.create_swapchain_khr(&swapchain_info, None).unwrap();
+    let swapchain_images = device.get_swapchain_images_khr(swapchain, None).unwrap();
+    let swapchain_image_views: Vec<_> = swapchain_images
+        .iter()
+        .map(|swapchain_image| {
+            let image_view_info = vk::ImageViewCreateInfoBuilder::new()
+                .image(*swapchain_image)
+                .view_type(vk::ImageViewType::_2D)
+                .format(format.format)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::IDENTITY,
+                    g: vk::ComponentSwizzle::IDENTITY,
+                    b: vk::ComponentSwizzle::IDENTITY,
+                    a: vk::ComponentSwizzle::IDENTITY,
+                })
+                .subresource_range(
+                    vk::ImageSubresourceRangeBuilder::new()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                );
+            device.create_image_view(&image_view_info, None).unwrap()
+        })
+        .collect();
+    
+    // At this point we have swapchain.
+
+    //https://www.intel.com/content/www/us/en/developer/articles/training/practical-approach-to-vulkan-part-1.html
+    // "": Vulkan applications:
+    // Acquire a swapchain image, render into the acquired image, present the image to the screen, repeat.
+    // To complete any task we need a command buffer, these are grouped into pools.
+    // Acquisition of an image to render into involves a semaphore or a fence.
+
+
+    // ""
+    // At least one command buffer. This buffer is required to record and submit rendering commands to the graphics hardware.
+    // Image available (image acquired) semaphore. This semaphore gets signaled by a presentation engine and is used to synchronize rendering with swap chain image acquisition.
+    // Rendering finished (ready to present) semaphore. This semaphore gets signaled when processing of the command buffer is finished and is used to synchronize presentation with the rendering process.
+    // Fence. A fence indicates when the rendering of a whole frame is finished and informs our application when it can reuse resources from a given frame.
+
+    let num_threads = 3; // for now.
+
+    for i_t in 0..(num_threads - 1) {
+        // 
+    }
+    // each frame in each thread gets its 
     
 
-        // At this point we have swapchain.
+    // The Intel article recommends three sets of frame resources.
+    // I guess these are one-to-one with the threads times frames.
+    // I guess we use the 3 instead of the frames number, they are somewhat though not completely related.
 
-        //https://www.intel.com/content/www/us/en/developer/articles/training/practical-approach-to-vulkan-part-1.html
-        // "": Vulkan applications:
-        // Acquire a swapchain image, render into the acquired image, present the image to the screen, repeat.
-        // To complete any task we need a command buffer, these are grouped into pools.
-        // Acquisition of an image to render into involves a semaphore or a fence.
+    // a command pool then would be part of frame resources.
 
+    // 3 sets of frame resources per thread.
 
-        // ""
-        // At least one command buffer. This buffer is required to record and submit rendering commands to the graphics hardware.
-        // Image available (image acquired) semaphore. This semaphore gets signaled by a presentation engine and is used to synchronize rendering with swap chain image acquisition.
-        // Rendering finished (ready to present) semaphore. This semaphore gets signaled when processing of the command buffer is finished and is used to synchronize presentation with the rendering process.
-        // Fence. A fence indicates when the rendering of a whole frame is finished and informs our application when it can reuse resources from a given frame.
+    // let frame_resources = 
 
-        let num_threads = 3; // for now.
+    //https://stackoverflow.com/questions/53438692/creating-multiple-command-pools-per-thread-in-vulkan
+    // One command pool per frame per thread.
+    // So multiple threads just for rendering.  Plus the state management thread(s).
 
-        for i_t in 0..(num_threads - 1) {
-            // 
-        }
-        // each frame in each thread gets its 
-        
-
-        // The Intel article recommends three sets of frame resources.
-        // I guess these are one-to-one with the threads times frames.
-        // I guess we use the 3 instead of the frames number, they are somewhat though not completely related.
-
-        // a command pool then would be part of frame resources.
-
-        // 3 sets of frame resources per thread.
-
-        // let frame_resources = 
-
-        //https://stackoverflow.com/questions/53438692/creating-multiple-command-pools-per-thread-in-vulkan
-        // One command pool per frame per thread.
-        // So multiple threads just for rendering.  Plus the state management thread(s).
-
-        //https://stackoverflow.com/questions/73502161/vulkan-why-have-multiple-command-buffers-per-pool
-        // Multiple command buffers per pool.
+    //https://stackoverflow.com/questions/73502161/vulkan-why-have-multiple-command-buffers-per-pool
+    // Multiple command buffers per pool.
 
 
-        // Question: Do semaphores and fences need to be shared across threads? Or can threads maintain independent sets?
+    // Question: Do semaphores and fences need to be shared across threads? Or can threads maintain independent sets?
 
-        // After we do the structure foundation as above, we can focus on the render loop and render structure.
-        // Attachments, pipeline, depth, shader config, vertex buffers, index buffers
-        // swapchain framebuffers 
-        // pipeline, swapchin framebuffer, shader objects,
-        // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
+    // After we do the structure foundation as above, we can focus on the render loop and render structure.
+    // Attachments, pipeline, depth, shader config, vertex buffers, index buffers
+    // swapchain framebuffers 
+    // pipeline, swapchin framebuffer, shader objects,
+    // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
 
 
-        let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
-        let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
-        let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
-        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+    let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
+    let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
+    let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
         .queue_family_index(queue_family);
 
-        let frames_resources: Vec<FrameResources> = (0..3)
-        .map(|_| {
-            FrameResources {
-                name: vec![0, 3, 7],
-                ias: [ // image available semaphores
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                ],
-                rfs: [ // render finished semaphores
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                    dl.create_semaphore(&semaphore_info, None).unwrap(),
-                ],
-                iff: [ // in flight fences
-                    dl.create_fence(&fence_info, None).unwrap(),
-                    dl.create_fence(&fence_info, None).unwrap(),
-                    dl.create_fence(&fence_info, None).unwrap(),
-                ],
-                command_pools: [
-                    dl.create_command_pool(&command_pool_info, None).unwrap(),
-                    dl.create_command_pool(&command_pool_info, None).unwrap(),
-                    dl.create_command_pool(&command_pool_info, None).unwrap(),
-                ]
-            }
-        }).
-        collect();
+    let frames_resources: Vec<FrameResources> = (0..3)
+    .map(|_| {
+        FrameResources {
+            name: vec![0, 3, 7],
+            ias: [ // image available semaphores
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+            ],
+            rfs: [ // render finished semaphores
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+                device.create_semaphore(&semaphore_info, None).unwrap(),
+            ],
+            iff: [ // in flight fences
+                device.create_fence(&fence_info, None).unwrap(),
+                device.create_fence(&fence_info, None).unwrap(),
+                device.create_fence(&fence_info, None).unwrap(),
+            ],
+            command_pools: [
+                device.create_command_pool(&command_pool_info, None).unwrap(),
+                device.create_command_pool(&command_pool_info, None).unwrap(),
+                device.create_command_pool(&command_pool_info, None).unwrap(),
+            ]
+        }
+    })
+    .collect();
 
-        println!("frames_resources.len() {}", frames_resources.len());
+    println!("frames_resources.len() {}", frames_resources.len());
+
+    // There are shared resources between threads. Game state.  Buffer references.
+    // Resources above are independent per thread.
+
+    // So now we need something to render to an image.  Vertex buffers, index buffers for a mesh
+    // materials, textures, transforms on objects in R^3.  Uniform buffers.
+
+    // What to render?  Akshually maybe the terrain model again, testing if we can optimize beyond
+    // the the disappointing frame rate in vulkan_8700, which is multi-threaded but likely contains 
+    // Vulkan anti-patterns.
+
+    // We can improve the matrix transforms and perspective also.  Space transforms.
+
+    // render-pass, pipeline, descriptor pools, set layouts, uniform buffer object
+    // cameras, vertex objects
+    // attachments.
+    // dependencies, 
+
+    // swapchain_framebuffers // these are re-used or no?
+    // command buffers this is ad-hoc as command pools are reset
+
+    let (mut vertices_terr, mut indices_terr) = load_model().unwrap();
+
+    let physical_device_memory_properties = instance.get_physical_device_memory_properties(physical_device);
+
+
+
+
 
 
 
 }
 
+// per thread
 struct FrameResources {
     name: Vec<u32>,
     ias: [vk::Semaphore; 3], // image available semaphores
@@ -382,3 +411,111 @@ struct FrameResources {
     iff: [vk::Fence; 3],
     command_pools: [vk::CommandPool; 3],
 }
+
+
+unsafe fn buffer_vertices
+(
+    d: Arc<DeviceLoader>,
+    queue: vk::Queue,
+    command_pool: vk::CommandPool,
+    vertices: &mut Vec<VertexV3>,
+)
+-> Result<vk::Buffer, String>
+{
+    // let mut d = device;
+    let vb_size = ((::std::mem::size_of_val(&(3.14 as f32))) * 9 * vertices.len()) as vk::DeviceSize;
+    let info = vk::BufferCreateInfoBuilder::new()
+        .size(vb_size)
+        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+    let sb = d.create_buffer(&info, None).expect("Buffer create fail.");
+    let mem_reqs = d.get_buffer_memory_requirements(sb);
+    let info = vk::MemoryAllocateInfoBuilder::new()
+        .allocation_size(mem_reqs.size)
+        .memory_type_index(2);
+    let sb_mem = d.allocate_memory(&info, None).unwrap();
+    d.bind_buffer_memory(sb, sb_mem, 0).expect("Bind memory fail.");
+    let data_ptr = d.map_memory(
+        sb_mem,
+        0,
+        vk::WHOLE_SIZE,
+        vk::MemoryMapFlags::empty(),
+    ).unwrap() as *mut VertexV3;
+    data_ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
+    d.unmap_memory(sb_mem);
+    let info = vk::BufferCreateInfoBuilder::new()
+        .size(vb_size)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+    let vb = d.create_buffer(&info, None).expect("Create buffer fail.");
+    let mem_reqs = d.get_buffer_memory_requirements(vb);
+    let info = vk::MemoryAllocateInfoBuilder::new()
+        .allocation_size(mem_reqs.size)
+        .memory_type_index(1);
+    let vb_mem = d.allocate_memory(&info, None).unwrap();
+    d.bind_buffer_memory(vb, vb_mem, 0).expect("Bind memory fail.");
+    let info = vk::CommandBufferAllocateInfoBuilder::new()
+        .command_pool(command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(1);
+    let cb = d.allocate_command_buffers(&info).unwrap()[0];
+    let info =  vk::CommandBufferBeginInfoBuilder::new()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    d.begin_command_buffer(cb, &info).expect("Begin command buffer fail.");
+    let info = vk::BufferCopyBuilder::new()
+        .src_offset(0)
+        .dst_offset(0)
+        .size(vb_size);
+    d.cmd_copy_buffer(cb, sb, vb, &[info]);
+    d.end_command_buffer(cb).expect("End command buffer fail.");
+    let cbs = &[cb];
+    let info = vk::SubmitInfoBuilder::new()
+        .wait_semaphores(&[])
+        .command_buffers(cbs)
+        .signal_semaphores(&[]);
+    d.queue_submit(queue, &[info], vk::Fence::default()).expect("Queue submit fail.");
+    Ok(vb)
+}
+
+
+// fn buffer_indices
+
+
+fn load_model
+()
+-> Result<(Vec<VertexV3>, Vec<u32>), String>
+{
+    let path_str: &str = "assets/terrain__002__.obj";
+    let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
+    let model = models[0].clone();
+    let mut vertices_terr: Vec<VertexV3> = vec![];
+    let mesh = model.mesh;
+    let total_vertices_count = mesh.positions.len() / 3;
+    for i in 0..total_vertices_count {
+        let vertex = VertexV3 {
+            pos: [
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 2],
+                1.0,
+            ],
+            color: [0.8, 0.20, 0.30, 0.40],
+        };
+        vertices_terr.push(vertex);
+    };
+    let mut indices_terr_full = mesh.indices.clone(); 
+    let mut indices_terr = vec![];
+    for i in 0..(indices_terr_full.len() / 2) {
+        indices_terr.push(indices_terr_full[i]);
+    }
+    Ok((vertices_terr, indices_terr))
+}
+    
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VertexV3 {
+    pub pos: [f32; 4],
+    pub color: [f32; 4],
+}
+
+
