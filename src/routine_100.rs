@@ -395,8 +395,18 @@ pub unsafe fn routine
 
     let physical_device_memory_properties = instance.get_physical_device_memory_properties(physical_device);
 
-
-
+    let info = vk::CommandPoolCreateInfoBuilder::new()
+            .queue_family_index(queue_family)
+            .flags(vk::CommandPoolCreateFlags::TRANSIENT);
+    let tcp = device.create_command_pool(&command_pool_info, None).unwrap();
+    let vertex_buffer = Arc::new(
+        buffer_vertices(
+            device,
+            queue,
+            tcp,
+            &mut vertices_terr,
+        )
+    );
 
 
 
