@@ -328,45 +328,48 @@ pub unsafe fn routine
 
         // Question: Do semaphores and fences need to be shared across threads? Or can threads maintain independent sets?
 
-
-        let info = vk::SemaphoreCreateInfoBuilder::new();
-        let ias: Vec<_> = (0..3) // image available semaphorse
-            .map(|_| dl.create_semaphore(&info, None).unwrap())
-            .collect();
-        let rfs: Vec<_> = (0..3) // render-finished-semaphores
-            .map(|_| dl.create_semaphore(&info, None).unwrap())
-            .collect();
-        let info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
-        // let iff: Arc<Mutex<Vec<Arc<Mutex<_>>>>> = Arc::new(Mutex::new(
-        let iff: Vec<_> = // in flight fences
-            (0..3) // as per the Intel recommendation.  Do this once per thread. And,
-            // atm I'm thinking this is not needing to be shared, so no Arc Mutex
-            .map(|_| dl.create_fence(&info, None).unwrap())
-            .collect();
-
         // After we do the structure foundation as above, we can focus on the render loop and render structure.
         // Attachments, pipeline, depth, shader config, vertex buffers, index buffers
-
         // swapchain framebuffers 
-
         // pipeline, swapchin framebuffer, shader objects,
-
         // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
 
 
-        let info = vk::SemaphoreCreateInfoBuilder::new();
+        let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
+        let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
+        let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
+        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+        .queue_family_index(queue_family);
+
         let frames_resources: Vec<FrameResources> = (0..3)
         .map(|_| {
             FrameResources {
                 name: vec![0, 3, 7],
-                ias: [
-                    dl.create_semaphore(&info, None).unwrap(),
-                    dl.create_semaphore(&info, None).unwrap(),
-                    dl.create_semaphore(&info, None).unwrap(),
+                ias: [ // image available semaphores
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
                 ],
+                rfs: [ // render finished semaphores
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
+                    dl.create_semaphore(&semaphore_info, None).unwrap(),
+                ],
+                iff: [ // in flight fences
+                    dl.create_fence(&fence_info, None).unwrap(),
+                    dl.create_fence(&fence_info, None).unwrap(),
+                    dl.create_fence(&fence_info, None).unwrap(),
+                ],
+                command_pools: [
+                    dl.create_command_pool(&command_pool_info, None).unwrap(),
+                    dl.create_command_pool(&command_pool_info, None).unwrap(),
+                    dl.create_command_pool(&command_pool_info, None).unwrap(),
+                ]
             }
         }).
         collect();
+
+        println!("frames_resources.len() {}", frames_resources.len());
 
 
 
@@ -374,5 +377,8 @@ pub unsafe fn routine
 
 struct FrameResources {
     name: Vec<u32>,
-    ias: [vk::Semaphore; 3]//
+    ias: [vk::Semaphore; 3], // image available semaphores
+    rfs: [vk::Semaphore; 3], // render finished semaphores
+    iff: [vk::Fence; 3],
+    command_pools: [vk::CommandPool; 3],
 }
