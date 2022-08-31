@@ -1,13 +1,11 @@
 use cgmath::{Deg, Rad, Matrix4, Point3, Vector3, Vector4};
 use closure::closure;
-
 use erupt::{
     cstr,
     utils::{self, surface},
     vk, DeviceLoader, EntryLoader, InstanceLoader,
     vk::{Device, MemoryMapFlags},
 };
-
 use winit::{
     dpi::PhysicalSize,
     event::{
@@ -19,9 +17,7 @@ use winit::{
     window::WindowBuilder,
     window::Window
 };
-
 use nalgebra_glm as glm;
-
 use std::{
     ffi::{c_void, CStr, CString},
     fs,
@@ -38,7 +34,6 @@ use std::{
     thread,
     time,
 };
-
 use structopt::StructOpt;
 
 unsafe extern "system" fn debug_callback(
@@ -58,7 +53,6 @@ unsafe extern "system" fn debug_callback(
 const TITLE: &str = "vulkan-routine";
 const FRAMES_IN_FLIGHT: usize = 3;
 const LAYER_KHRONOS_VALIDATION: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
-
 
 #[derive(Debug, StructOpt)]
 struct Opt {
