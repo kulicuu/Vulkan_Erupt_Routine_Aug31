@@ -220,8 +220,8 @@ pub unsafe fn routine
         .enabled_layer_names(&device_layers);
     let device  = Arc::new(Mutex::new(DeviceLoader::new(&instance, physical_device, &device_info).unwrap()));
 
-    let mut device_locked = device.lock().unwrap();
-    let queue = device_locked.get_device_queue(queue_family, 0);
+    let mut dl = device.lock().unwrap();
+    let queue = dl.get_device_queue(queue_family, 0);
 
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(physical_device, surface).unwrap();
     let mut image_count = surface_caps.min_image_count + 1;
@@ -256,8 +256,8 @@ pub unsafe fn routine
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::default());
 
-        let swapchain = device_locked.create_swapchain_khr(&swapchain_info, None).unwrap();
-        let swapchain_images = device_locked.get_swapchain_images_khr(swapchain, None).unwrap();
+        let swapchain = dl.create_swapchain_khr(&swapchain_info, None).unwrap();
+        let swapchain_images = dl.get_swapchain_images_khr(swapchain, None).unwrap();
         let swapchain_image_views: Vec<_> = swapchain_images
             .iter()
             .map(|swapchain_image| {
@@ -280,7 +280,7 @@ pub unsafe fn routine
                             .layer_count(1)
                             .build(),
                     );
-                device_locked.create_image_view(&image_view_info, None).unwrap()
+                dl.create_image_view(&image_view_info, None).unwrap()
             })
             .collect();
     
@@ -300,8 +300,23 @@ pub unsafe fn routine
         // Rendering finished (ready to present) semaphore. This semaphore gets signaled when processing of the command buffer is finished and is used to synchronize presentation with the rendering process.
         // Fence. A fence indicates when the rendering of a whole frame is finished and informs our application when it can reuse resources from a given frame.
 
+        let num_threads = 3; // for now.
 
+        for i_t in 0..(num_threads - 1) {
+            // 
+        }
+        // each frame in each thread gets its 
         
+
+        // The Intel article recommends three sets of frame resources.
+        // I guess these are one-to-one with the threads times frames.
+        // I guess we use the 3 instead of the frames number, they are somewhat though not completely related.
+
+        // a command pool then would be part of frame resources.
+
+        // 3 sets of frame resources per thread.
+
+        // let frame_resources = 
 
         //https://stackoverflow.com/questions/53438692/creating-multiple-command-pools-per-thread-in-vulkan
         // One command pool per frame per thread.
@@ -315,32 +330,19 @@ pub unsafe fn routine
 
 
         let info = vk::SemaphoreCreateInfoBuilder::new();
-        let image_available_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| Arc::new(Mutex::new(
-                device_locked.create_semaphore(&info, None).unwrap())
-            ))
+        let ias: Vec<_> = (0..3) // image available semaphorse
+            .map(|_| dl.create_semaphore(&info, None).unwrap())
             .collect();
-        let ias = Arc::new(image_available_semaphores);
-        let render_finished_semaphores: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| 
-                Arc::new(Mutex::new(
-                    device_locked.create_semaphore(&info, None).unwrap())
-                ))
+        let rfs: Vec<_> = (0..3) // render-finished-semaphores
+            .map(|_| dl.create_semaphore(&info, None).unwrap())
             .collect();
-        let rfs = Arc::new(render_finished_semaphores);
         let info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
-        let in_flight_fences: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| 
-                Arc::new(Mutex::new(
-                    device_locked.create_fence(&info, None).unwrap())
-                ))
+        // let iff: Arc<Mutex<Vec<Arc<Mutex<_>>>>> = Arc::new(Mutex::new(
+        let iff: Vec<_> = // in flight fences
+            (0..3) // as per the Intel recommendation.  Do this once per thread. And,
+            // atm I'm thinking this is not needing to be shared, so no Arc Mutex
+            .map(|_| dl.create_fence(&info, None).unwrap())
             .collect();
-        let iff = Arc::new(in_flight_fences);
-
-
-
-
-
 
         // After we do the structure foundation as above, we can focus on the render loop and render structure.
         // Attachments, pipeline, depth, shader config, vertex buffers, index buffers
@@ -351,13 +353,20 @@ pub unsafe fn routine
 
         // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
 
-    let frame_resources = Arc::new(Mutex::new(
-        FrameResources {
-            name: vec![3],
-        }
-    ));
-    
 
+        let info = vk::SemaphoreCreateInfoBuilder::new();
+        let frames_resources: Vec<FrameResources> = (0..3)
+        .map(|_| {
+            FrameResources {
+                name: vec![0, 3, 7],
+                ias: [
+                    dl.create_semaphore(&info, None).unwrap(),
+                    dl.create_semaphore(&info, None).unwrap(),
+                    dl.create_semaphore(&info, None).unwrap(),
+                ],
+            }
+        }).
+        collect();
 
 
 
@@ -365,4 +374,5 @@ pub unsafe fn routine
 
 struct FrameResources {
     name: Vec<u32>,
+    ias: [vk::Semaphore; 3]//
 }
