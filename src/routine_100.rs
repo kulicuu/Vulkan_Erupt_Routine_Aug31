@@ -401,7 +401,7 @@ pub unsafe fn routine
     let tcp = device.create_command_pool(&command_pool_info, None).unwrap();
 
 
-    let vertex_buffer = Arc::new(
+    let vb = Arc::new(
         buffer_vertices(
             device.clone(),
             queue,
@@ -419,13 +419,85 @@ pub unsafe fn routine
         ).unwrap()
     );
     
+    let info = vk::DescriptorSetLayoutBindingFlagsCreateInfoBuilder::new()
+        .binding_flags(&[vk::DescriptorBindingFlags::empty()]);
 
+    let samplers = [vk::Sampler::default()];
+    let binding = vk::DescriptorSetLayoutBindingBuilder::new()
+        .binding(0)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .immutable_samplers(&samplers);
+    let bindings = &[binding];
+    let info = vk::DescriptorSetLayoutCreateInfoBuilder::new()
+        .flags(vk::DescriptorSetLayoutCreateFlags::empty()) 
+        .bindings(bindings);
+    let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
 
+    let ubo_size = ::std::mem::size_of::<UniformBufferObject>();
+    let mut uniform_buffers: Vec<vk::Buffer> = vec![];
+    let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
+    let swapchain_image_count = swapchain_images.len();
 
+    let (uniform_buffer, uniform_buffer_memory) = create_buffer(
+        device.clone(),
+        ubo_size as u64,
+        vk::BufferUsageFlags::UNIFORM_BUFFER,
+        2,
+    );
+    // I imagine that one needs to be shared among threads.
+    let uniform_buffer = Arc::new(Mutex::new(
+        uniform_buffer,
+    ));
+    let uniform_buffer_memory = Arc::new(Mutex::new(
+        uniform_buffer_memory,
+    ));
+    
+    
 
 
 
 }
+
+
+
+
+
+
+
+
+
+unsafe fn create_buffer
+(
+    device: Arc<DeviceLoader>,
+    // flags: vk::BufferCreateFlags,
+    size: vk::DeviceSize,
+    usage: vk::BufferUsageFlags,
+    memory_type_index: u32,
+    // queue_family_indices: &[u32],
+) 
+-> (vk::Buffer, vk::DeviceMemory) {
+    let buffer_create_info = vk::BufferCreateInfoBuilder::new()
+        // .flags(&[])
+        .size(size)
+        .usage(usage)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .queue_family_indices(&[0]);
+    let buffer = device.create_buffer(&buffer_create_info, None)
+        .expect("Failed to create buffer.");
+    let mem_reqs = device.get_buffer_memory_requirements(buffer);
+    let allocate_info = vk::MemoryAllocateInfoBuilder::new()
+        .allocation_size(mem_reqs.size)
+        .memory_type_index(memory_type_index);
+    let buffer_memory = device
+        .allocate_memory(&allocate_info, None)
+        .expect("Failed to allocate memory for buffer.");
+    device.bind_buffer_memory(buffer, buffer_memory, 0)
+        .expect("Failed to bind buffer.");
+    (buffer, buffer_memory)
+}
+
 
 // per thread
 struct FrameResources {
@@ -605,4 +677,12 @@ pub struct VertexV3 {
     pub color: [f32; 4],
 }
 
+
+#[repr(C)]
+#[derive(Clone, Debug, Copy)]
+pub struct UniformBufferObject {
+    pub model: Matrix4<f32>,
+    pub view: Matrix4<f32>,
+    pub proj: Matrix4<f32>,
+}
 
