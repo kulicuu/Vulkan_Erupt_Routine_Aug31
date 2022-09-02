@@ -862,7 +862,13 @@ pub unsafe fn routine
 // pub fn get_mut(&mut self) -> LockResult<&mut T>
 
 
-unsafe fn draw_op
+// pub fn into_inner(self) -> LockResult<T>
+// where
+// T: Sized, 
+// Consumes this mutex, returning the underlying data.
+
+
+unsafe fn draw_op_111
 (
     device: Arc<DeviceLoader>,
     frame: usize,
@@ -875,19 +881,15 @@ unsafe fn draw_op
     swapchain_image_extent: Arc<vk::Extent2D>,
     render_pass: Arc<vk::RenderPass>,
 
-
+    queue_family: u32,
 
 )
 {
-
-
-    let image_view = *swapchain_image_views.lock().unwrap()[frame];
-
-    
-    let attachments = vec![image_view, *depth_image_view];
+    let image_view = swapchain_image_views.lock().unwrap()[frame].clone();   
+    let attachments = vec![*image_view, *depth_image_view];
     let framebuffer_info = vk::FramebufferCreateInfoBuilder::new()
         .render_pass(*render_pass)
-        .attachments(&attachments)
+        .attachments(attachments.as_slice())
         .width(swapchain_image_extent.width)
         .height(swapchain_image_extent.height)
         .layers(1);
@@ -895,12 +897,21 @@ unsafe fn draw_op
     
 
 
+    // make new command pool?
+    // I seem to recall that being a thing.
 
 
 
     // Iirc we make fresh swapchain framebuffer every frame.
 
     // Then allocate command buffers and record command buffer.
+
+    let info = vk::CommandPoolCreateInfoBuilder::new()
+        .queue_family_index(queue_family)
+        .flags(vk::CommandPoolCreateFlags::PROTECTED);
+    let command_pool = device.create_command_pool(&info, None).unwrap();
+    
+    
 
 
 }
@@ -918,7 +929,6 @@ unsafe fn create_swapchain
     physical_device: Arc<vk::PhysicalDevice>,
     window: Arc<Window>,
 )
-
 //  erupt::extensions::khr_swapchain::SwapchainKHR
 -> Result<
     (
