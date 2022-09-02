@@ -896,7 +896,17 @@ unsafe fn draw_op_111
 
     queue_family: u32,
     clear_values: Vec<vk::ClearValue>,
+    pipeline: Arc<vk::Pipeline>,
+    pipeline_layout: Arc<vk::PipelineLayout>,
 
+
+    index_buffer: Arc<vk::Buffer>,
+    vertex_buffer: Arc<vk::Buffer>,
+
+
+    descriptor_sets: SmallVec<vk::DescriptorSet>,
+
+    indices_length: Arc<u32>,
 
 )
 {
@@ -909,23 +919,15 @@ unsafe fn draw_op_111
         .height(swapchain_image_extent.height)
         .layers(1);
     let swapchain_framebuffer = device.create_framebuffer(&framebuffer_info, None).unwrap();
-    
-
-
     // make new command pool?
     // I seem to recall that being a thing.
-
-
-
     // Iirc we make fresh swapchain framebuffer every frame.
-
     // Then allocate command buffers and record command buffer.
-
+    // Now allocating and recording a command buffer.
     let info = vk::CommandPoolCreateInfoBuilder::new()
         .queue_family_index(queue_family)
         .flags(vk::CommandPoolCreateFlags::PROTECTED);
     let command_pool = device.create_command_pool(&info, None).unwrap();
-
     let info = vk::CommandBufferAllocateInfoBuilder::new()
         .command_pool(command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
@@ -947,7 +949,28 @@ unsafe fn draw_op_111
         &info,
         vk::SubpassContents::INLINE,
     );
+    device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, *pipeline);
+    device.cmd_bind_index_buffer(command_buffer, *index_buffer, 0, vk::IndexType::UINT32);
+    device.cmd_bind_vertex_buffers(command_buffer, 0, &[*vertex_buffer], &[0]);
+    device.cmd_bind_descriptor_sets(command_buffer, vk::PipelineBindPoint::GRAPHICS, *pipeline_layout, 0, &descriptor_sets, &[]);
 
+
+    let pc_view = glm::Mat4::identity();
+
+    let ptr = std::ptr::addr_of!(pc_view) as *const c_void;
+    device.cmd_push_constants
+    (
+        command_buffer,
+        *pipeline_layout,
+        vk::ShaderStageFlags::VERTEX,
+        0,
+        std::mem::size_of::<glm::Mat4>() as u32,
+        ptr,
+    );
+    device.cmd_draw_indexed(command_buffer, *indices_length, *indices_length / 3, 0, 0, 0);
+    device.cmd_end_render_pass(command_buffer);
+    device.end_command_buffer(command_buffer).unwrap();
+    // Ends recording of cb, but it has not been submitted yet.
 }
 
 
