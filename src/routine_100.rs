@@ -1,11 +1,16 @@
 use cgmath::{Deg, Rad, Matrix4, Point3, Vector3, Vector4};
 use closure::closure;
+
+// erupt::extensions::khr_surface::PresentModeKHR
+//  erupt::extensions::khr_surface::SurfaceFormatKHR
+//  erupt::extensions::khr_surface::SurfaceKHR
 use erupt::{
     cstr,
     utils::{self, surface},
     vk, DeviceLoader, EntryLoader, InstanceLoader,
     vk::{Device, MemoryMapFlags},
 };
+
 use winit::{
     dpi::PhysicalSize,
     event::{
@@ -75,15 +80,17 @@ pub unsafe fn routine
         .build(&event_loop)
         .unwrap();
 
-        let entry = EntryLoader::new().unwrap();
-        let application_name = CString::new("Erupt Routine 100").unwrap();
-        let engine_name = CString::new("Peregrine").unwrap();
-        let app_info = vk::ApplicationInfoBuilder::new()
-            .application_name(&application_name)
-            .application_version(vk::make_api_version(0, 1, 0, 0))
-            .engine_name(&engine_name)
-            .engine_version(vk::make_api_version(0, 1, 0, 0))
-            .api_version(vk::make_api_version(0, 1, 0, 0));
+    // let 
+
+    let entry = EntryLoader::new().unwrap();
+    let application_name = CString::new("Erupt Routine 100").unwrap();
+    let engine_name = CString::new("Peregrine").unwrap();
+    let app_info = vk::ApplicationInfoBuilder::new()
+        .application_name(&application_name)
+        .application_version(vk::make_api_version(0, 1, 0, 0))
+        .engine_name(&engine_name)
+        .engine_version(vk::make_api_version(0, 1, 0, 0))
+        .api_version(vk::make_api_version(0, 1, 0, 0));
 
 
     let mut instance_extensions = surface::enumerate_required_extensions(&window).unwrap();
@@ -230,6 +237,9 @@ pub unsafe fn routine
         image_count = surface_caps.max_image_count;
     }
 
+    let window_inner_size = window.inner_size();
+
+    // this is the stuff to recompute on window resize.
     let swapchain_image_extent = match surface_caps.current_extent {
         vk::Extent2D {
             width: u32::MAX,
@@ -419,9 +429,9 @@ pub unsafe fn routine
         ).unwrap()
     );
     
+    // Uniform buffer 
     let info = vk::DescriptorSetLayoutBindingFlagsCreateInfoBuilder::new()
         .binding_flags(&[vk::DescriptorBindingFlags::empty()]);
-
     let samplers = [vk::Sampler::default()];
     let binding = vk::DescriptorSetLayoutBindingBuilder::new()
         .binding(0)
@@ -434,19 +444,16 @@ pub unsafe fn routine
         .flags(vk::DescriptorSetLayoutCreateFlags::empty()) 
         .bindings(bindings);
     let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
-
     let ubo_size = ::std::mem::size_of::<UniformBufferObject>();
     let mut uniform_buffers: Vec<vk::Buffer> = vec![];
     let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
     let swapchain_image_count = swapchain_images.len();
-
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
         device.clone(),
         ubo_size as u64,
         vk::BufferUsageFlags::UNIFORM_BUFFER,
         2,
     );
-    // I imagine that one needs to be shared among threads.
     let uniform_buffer = Arc::new(Mutex::new(
         uniform_buffer,
     ));
@@ -454,7 +461,12 @@ pub unsafe fn routine
         uniform_buffer_memory,
     ));
     
+
     
+// https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
+
+
+
 
 
 
@@ -464,7 +476,79 @@ pub unsafe fn routine
 
 
 
+unsafe fn create_swapchain
+(
+    device: Arc<DeviceLoader>,
+    instance: Arc<InstanceLoader>,
+    present_mode: Arc<erupt::extensions::khr_surface::PresentModeKHR>,
+    format: Arc<erupt::extensions::khr_surface::SurfaceFormatKHR>,
+    surface: Arc<erupt::extensions::khr_surface::SurfaceKHR>,
+    physical_device: Arc<vk::PhysicalDevice>,
+    window: Window,
+)
+{
+    let surface_caps = instance.get_physical_device_surface_capabilities_khr(*physical_device, *surface).unwrap();
+    let mut image_count = surface_caps.min_image_count + 1;
+    if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
+        image_count = surface_caps.max_image_count;
+    }
 
+    // this is the stuff to recompute on window resize.
+    let swapchain_image_extent = match surface_caps.current_extent {
+        vk::Extent2D {
+            width: u32::MAX,
+            height: u32::MAX,
+        } => {
+            let PhysicalSize { width, height } = window.inner_size();
+            // vk::Extent2D { width: 4000, height: 4000 }
+            vk::Extent2D { width, height }
+        }
+        normal => normal,
+    };
+
+    let swapchain_info = vk::SwapchainCreateInfoKHRBuilder::new()
+        .surface(*surface)
+        .min_image_count(image_count)
+        .image_format(format.format)
+        .image_color_space(format.color_space)
+        .image_extent(swapchain_image_extent)
+        .image_array_layers(1)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .pre_transform(surface_caps.current_transform)
+        .composite_alpha(vk::CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
+        .present_mode(*present_mode)
+        .clipped(true)
+        .old_swapchain(vk::SwapchainKHR::default());
+
+    let swapchain = device.create_swapchain_khr(&swapchain_info, None).unwrap();
+    let swapchain_images = device.get_swapchain_images_khr(swapchain, None).unwrap();
+    let swapchain_image_views: Vec<_> = swapchain_images
+        .iter()
+        .map(|swapchain_image| {
+            let image_view_info = vk::ImageViewCreateInfoBuilder::new()
+                .image(*swapchain_image)
+                .view_type(vk::ImageViewType::_2D)
+                .format(format.format)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::IDENTITY,
+                    g: vk::ComponentSwizzle::IDENTITY,
+                    b: vk::ComponentSwizzle::IDENTITY,
+                    a: vk::ComponentSwizzle::IDENTITY,
+                })
+                .subresource_range(
+                    vk::ImageSubresourceRangeBuilder::new()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1)
+                        .build(),
+                );
+            device.create_image_view(&image_view_info, None).unwrap()
+        })
+        .collect();
+}
 
 
 
@@ -477,7 +561,8 @@ unsafe fn create_buffer
     memory_type_index: u32,
     // queue_family_indices: &[u32],
 ) 
--> (vk::Buffer, vk::DeviceMemory) {
+-> (vk::Buffer, vk::DeviceMemory) 
+{
     let buffer_create_info = vk::BufferCreateInfoBuilder::new()
         // .flags(&[])
         .size(size)
