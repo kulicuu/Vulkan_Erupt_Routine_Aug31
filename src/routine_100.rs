@@ -603,6 +603,16 @@ pub unsafe fn routine
     let frag_decoded = utils::decode_spv(SHADER_FRAG).unwrap();
     let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&frag_decoded);
     let shader_frag = device.create_shader_module(&module_info, None).unwrap();
+    let shader_stages = vec![
+        vk::PipelineShaderStageCreateInfoBuilder::new()
+            .stage(vk::ShaderStageFlagBits::VERTEX)
+            .module(shader_vert)
+            .name(&entry_point),
+        vk::PipelineShaderStageCreateInfoBuilder::new()
+            .stage(vk::ShaderStageFlagBits::FRAGMENT)
+            .module(shader_frag)
+            .name(&entry_point),
+    ];
     let vertex_buffer_bindings_desc_info = vk::VertexInputBindingDescriptionBuilder::new()
         .binding(0)
         .stride(std::mem::size_of::<VertexV3>() as u32)
@@ -669,6 +679,40 @@ pub unsafe fn routine
         .max_depth_bounds(1.0)
         .front(vk::StencilOpStateBuilder::new().build())
         .back(vk::StencilOpStateBuilder::new().build());
+    let desc_layouts_slc = &[descriptor_set_layout];
+    let push_constant_range = vk::PushConstantRangeBuilder::new()
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .offset(0)
+        .size(std::mem::size_of::<glm::Mat4>() as u32);
+    let slice = [push_constant_range];
+    let pipeline_layout_info = vk::PipelineLayoutCreateInfoBuilder::new()
+    .set_layouts(desc_layouts_slc)
+    .push_constant_ranges(&slice);
+
+    let pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None).unwrap();
+    // let pipeline_layout_2 = device.create_pipeline_layout(&pipeline_layout_info, None).unwrap();
+    let pipeline_info = vk::GraphicsPipelineCreateInfoBuilder::new()
+        .stages(&shader_stages)
+        .vertex_input_state(&vertex_input)
+        .input_assembly_state(&input_assembly)
+        .depth_stencil_state(&pipeline_stencil_info)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterizer)
+        .multisample_state(&multisampling)
+        .color_blend_state(&color_blending)
+        .layout(pipeline_layout)
+        .render_pass(*render_pass)
+        .subpass(0);
+    let pipeline = device.create_graphics_pipelines(vk::PipelineCache::default(), &[pipeline_info], None).unwrap()[0];
+
+
+
+
+
+
+
+
+
 }
 
 
