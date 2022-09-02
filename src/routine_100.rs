@@ -321,41 +321,40 @@ pub unsafe fn routine
     // then we operate on command buffers in multiple threads, setup window event loop, draws and state updates.
 
 
-    let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
-    let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
+
     let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
         .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
         .queue_family_index(queue_family);
 
-    let frames_resources: Vec<FrameResources> = (0..3)
-    .map(|_| {
-        FrameResources {
-            name: vec![0, 3, 7],
-            ias: [ // image available semaphores
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-            ],
-            rfs: [ // render finished semaphores
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-                device.create_semaphore(&semaphore_info, None).unwrap(),
-            ],
-            iff: [ // in flight fences
-                device.create_fence(&fence_info, None).unwrap(),
-                device.create_fence(&fence_info, None).unwrap(),
-                device.create_fence(&fence_info, None).unwrap(),
-            ],
-            command_pools: [
-                device.create_command_pool(&command_pool_info, None).unwrap(),
-                device.create_command_pool(&command_pool_info, None).unwrap(),
-                device.create_command_pool(&command_pool_info, None).unwrap(),
-            ]
-        }
-    })
-    .collect();
+    // let frames_resources: Vec<FrameResources> = (0..3)
+    // .map(|_| {
+    //     FrameResources {
+    //         name: vec![0, 3, 7],
+    //         ias: [ // image available semaphores
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //         ],
+    //         rfs: [ // render finished semaphores
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //             device.create_semaphore(&semaphore_info, None).unwrap(),
+    //         ],
+    //         iff: [ // in flight fences
+    //             device.create_fence(&fence_info, None).unwrap(),
+    //             device.create_fence(&fence_info, None).unwrap(),
+    //             device.create_fence(&fence_info, None).unwrap(),
+    //         ],
+    //         command_pools: [
+    //             device.create_command_pool(&command_pool_info, None).unwrap(),
+    //             device.create_command_pool(&command_pool_info, None).unwrap(),
+    //             device.create_command_pool(&command_pool_info, None).unwrap(),
+    //         ]
+    //     }
+    // })
+    // .collect();
 
-    println!("frames_resources.len() {}", frames_resources.len());
+    // println!("frames_resources.len() {}", frames_resources.len());
 
     // There are shared resources between threads. Game state.  Buffer references.
     // Resources above are independent per thread.
@@ -378,7 +377,7 @@ pub unsafe fn routine
     // command buffers this is ad-hoc as command pools are reset
 
     let (mut vertices_terr, mut indices_terr) = load_model().unwrap();
-
+    let indices_length = Arc::new(indices_terr.len());
     let physical_device_memory_properties = instance.get_physical_device_memory_properties(*physical_device);
 
     let info = vk::CommandPoolCreateInfoBuilder::new()
@@ -387,7 +386,7 @@ pub unsafe fn routine
     let tcp = device.create_command_pool(&command_pool_info, None).unwrap();
 
 
-    let vb = Arc::new(
+    let vertex_buffer = Arc::new(
         buffer_vertices(
             device.clone(),
             queue,
@@ -396,7 +395,7 @@ pub unsafe fn routine
         ).unwrap()
     );
 
-    let ib = Arc::new(
+    let index_buffer = Arc::new(
         buffer_indices(
             device.clone(),
             queue,
@@ -460,7 +459,7 @@ pub unsafe fn routine
     let d_set_alloc_info = vk::DescriptorSetAllocateInfoBuilder::new()
         .descriptor_pool(desc_pool)
         .set_layouts(set_layouts);
-    let d_sets = device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet");
+    let descriptor_sets = device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet");
     let ubo_size = ::std::mem::size_of::<UniformBufferObject>() as u64;
     // We skip the for loop for now that updates the 
     // uniform buffers.
@@ -569,8 +568,10 @@ pub unsafe fn routine
             base_array_layer: 0,
             layer_count: 1,
         });
-    let depth_image_view = device.create_image_view(&depth_image_view_info, None)
-        .expect("Failed to create image view.");
+    let depth_image_view = Arc::new(
+        device.create_image_view(&depth_image_view_info, None)
+        .expect("Failed to create image view.")
+    );
     let entry_point = CString::new("main").unwrap();
     let vert_decoded = utils::decode_spv(SHADER_VERT).unwrap();
     let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&vert_decoded);
@@ -664,7 +665,11 @@ pub unsafe fn routine
     .set_layouts(desc_layouts_slc)
     .push_constant_ranges(&slice);
 
-    let pipeline_layout = device.create_pipeline_layout(&pipeline_layout_info, None).unwrap();
+    let pipeline_layout = Arc::new(
+        device.create_pipeline_layout(&pipeline_layout_info, None).unwrap()
+    );
+    
+    
     // let pipeline_layout_2 = device.create_pipeline_layout(&pipeline_layout_info, None).unwrap();
     let pipeline_info = vk::GraphicsPipelineCreateInfoBuilder::new()
         .stages(&shader_stages)
@@ -675,10 +680,13 @@ pub unsafe fn routine
         .rasterization_state(&rasterizer)
         .multisample_state(&multisampling)
         .color_blend_state(&color_blending)
-        .layout(pipeline_layout)
+        .layout(*pipeline_layout)
         .render_pass(*render_pass)
         .subpass(0);
-    let pipeline = device.create_graphics_pipelines(vk::PipelineCache::default(), &[pipeline_info], None).unwrap()[0];
+    let pipeline = Arc::new(
+        device.create_graphics_pipelines(vk::PipelineCache::default(), &[pipeline_info], None).unwrap()[0]
+    );
+    
 
 
 
@@ -726,8 +734,48 @@ pub unsafe fn routine
     ];
 
 
+    let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
+    let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
 
 
+    // let frame_resources = FrameResources {
+
+    // }
+
+
+    let frame_resources = FrameResources {
+
+        device: device.clone(),
+        swapchain: swapchain.clone(),
+        swapchain_image_views: swapchain_image_views.clone(),
+        depth_image_view: depth_image_view.clone(),
+        swapchain_image_extent: swapchain_image_extent.clone(),
+        render_pass: render_pass.clone(),
+        queue_family: queue_family.clone(),
+        clear_values: clear_values,
+        pipeline: pipeline.clone(),
+        pipeline_layout: pipeline_layout.clone(),
+        index_buffer: index_buffer.clone(),
+        vertex_buffer: vertex_buffer.clone(),
+        descriptor_sets: descriptor_sets,
+        indices_length: indices_length,
+                // name: vec![0, 3, 7],
+        ias: [ // image available semaphores
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+        ],
+        rfs: [ // render finished semaphores
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+            device.create_semaphore(&semaphore_info, None).unwrap(),
+        ],
+        iff: [ // in flight fences
+            device.create_fence(&fence_info, None).unwrap(),
+            device.create_fence(&fence_info, None).unwrap(),
+            device.create_fence(&fence_info, None).unwrap(),
+        ],
+    };
 
 
     #[allow(clippy::collapsible_match, clippy::single_match)]
@@ -871,6 +919,63 @@ pub unsafe fn routine
 }
 
 
+
+// per thread
+// We could have 3 of these per thread.  Instead of 1 per thread with the arrays.
+// First we'll do the single threaded version
+// like this with array of three to index by frame 
+// acquired from khr.  not sure about the transition 
+// to multi-threaded, will reread that documentation material 
+struct FrameResources {
+
+
+    device: Arc<DeviceLoader>,
+    
+    swapchain: Arc<Mutex<SwapchainKHR>>,
+    swapchain_image_views: Arc<Mutex<Vec<Arc<vk::ImageView>>>>,
+
+
+
+    depth_image_view: Arc<vk::ImageView>,
+    swapchain_image_extent: Arc<vk::Extent2D>,
+    render_pass: Arc<vk::RenderPass>,
+    queue_family: u32,
+    clear_values: Vec<vk::ClearValue>,
+    pipeline: Arc<vk::Pipeline>,
+    pipeline_layout: Arc<vk::PipelineLayout>,
+    index_buffer: Arc<vk::Buffer>,
+    vertex_buffer: Arc<vk::Buffer>,
+    descriptor_sets: SmallVec<vk::DescriptorSet>,
+    indices_length: Arc<usize>,
+
+
+
+    // frame: usize,
+
+    
+    // name: Vec<u32>,
+
+    // images_in_flight: Vec<_>,
+
+
+    ias: [vk::Semaphore; 3], // image available semaphores
+    rfs: [vk::Semaphore; 3], // render finished semaphores
+    iff: [vk::Fence; 3],
+    // command_pools: [vk::CommandPool; 3],
+
+}
+
+
+struct FrameResources2 {
+    ias: vk::Semaphore,
+    rfs: vk::Semaphore,
+    iff: vk::Fence,
+    command_pool: vk::CommandPool,
+    // pipeline: Arc pipeline
+    // other shared stuff like the vertex buffers?
+}
+
+
 // Bettter Mutex usage with:
 // pub fn get_mut(&mut self) -> LockResult<&mut T>
 
@@ -886,28 +991,18 @@ unsafe fn draw_op_111
     device: Arc<DeviceLoader>,
     frame: usize,
     image_in_flight: vk::Fence,
-
     swapchain_image_views: Arc<Mutex<Vec<Arc<vk::ImageView>>>>,
-
-
     depth_image_view: Arc<vk::ImageView>,
     swapchain_image_extent: Arc<vk::Extent2D>,
     render_pass: Arc<vk::RenderPass>,
-
     queue_family: u32,
     clear_values: Vec<vk::ClearValue>,
     pipeline: Arc<vk::Pipeline>,
     pipeline_layout: Arc<vk::PipelineLayout>,
-
-
     index_buffer: Arc<vk::Buffer>,
     vertex_buffer: Arc<vk::Buffer>,
-
-
     descriptor_sets: SmallVec<vk::DescriptorSet>,
-
     indices_length: Arc<u32>,
-
 )
 {
     let image_view = swapchain_image_views.lock().unwrap()[frame].clone();   
@@ -971,6 +1066,10 @@ unsafe fn draw_op_111
     device.cmd_end_render_pass(command_buffer);
     device.end_command_buffer(command_buffer).unwrap();
     // Ends recording of cb, but it has not been submitted yet.
+
+
+
+
 }
 
 
@@ -989,9 +1088,9 @@ unsafe fn create_swapchain
 //  erupt::extensions::khr_swapchain::SwapchainKHR
 -> Result<
     (
-    Arc<SwapchainKHR>, 
+    Arc<Mutex<SwapchainKHR>>, 
     Arc<SmallVec<Image>>, 
-    Arc<Vec<vk::ImageView>>,
+    Arc<Mutex<Vec<Arc<vk::ImageView>>>>,
     Arc<vk::Extent2D>,
     ), String>
 {
@@ -1027,6 +1126,7 @@ unsafe fn create_swapchain
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::default());
     let swapchain = device.create_swapchain_khr(&swapchain_info, None).unwrap();
+
     let swapchain_images = device.get_swapchain_images_khr(swapchain, None).unwrap();
     let swapchain_image_views: Vec<_> = swapchain_images
         .iter()
@@ -1050,13 +1150,15 @@ unsafe fn create_swapchain
                         .layer_count(1)
                         .build(),
                 );
-            device.create_image_view(&image_view_info, None).unwrap()
+            Arc::new(
+                device.create_image_view(&image_view_info, None).unwrap()
+            )
         })
         .collect();
     Ok((
-        Arc::new(swapchain), 
+        Arc::new(Mutex::new(swapchain)), 
         Arc::new(swapchain_images), 
-        Arc::new(swapchain_image_views),
+        Arc::new(Mutex::new(swapchain_image_views)),
         Arc::new(swapchain_image_extent),
     ))
 }
@@ -1093,34 +1195,7 @@ unsafe fn create_buffer
 }
 
 
-// per thread
-// We could have 3 of these per thread.  Instead of 1 per thread with the arrays.
-// First we'll do the single threaded version
-// like this with array of three to index by frame 
-// acquired from khr.  not sure about the transition 
-// to multi-threaded, will reread that documentation material 
-struct FrameResources {
-    name: Vec<u32>,
 
-    // images_in_flight: Vec<_>,
-
-
-    ias: [vk::Semaphore; 3], // image available semaphores
-    rfs: [vk::Semaphore; 3], // render finished semaphores
-    iff: [vk::Fence; 3],
-    command_pools: [vk::CommandPool; 3],
-
-}
-
-
-struct FrameResources2 {
-    ias: vk::Semaphore,
-    rfs: vk::Semaphore,
-    iff: vk::Fence,
-    command_pool: vk::CommandPool,
-    // pipeline: Arc pipeline
-    // other shared stuff like the vertex buffers?
-}
 
 unsafe fn buffer_vertices
 (
