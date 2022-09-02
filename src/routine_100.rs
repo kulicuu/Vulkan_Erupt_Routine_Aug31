@@ -871,31 +871,30 @@ pub unsafe fn routine
             //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
             //     .command_buffers]
 
+            let command_buffers = [command_buffer];
 
-
-            // let submit_info = vk::SubmitInfoBuilder::new()
-            //     .wait_semaphores(&wait_semaphores)
-            //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            //     .command_buffers(&cbs_35)
-            //     .signal_semaphores(&signal_semaphores);
+            let submit_info = vk::SubmitInfoBuilder::new()
+                .wait_semaphores(&wait_semaphores)
+                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                .command_buffers(&command_buffers)
+                .signal_semaphores(&signal_semaphores);
             
             // free_index = (image_index + 1) % 3;
             // rcb_tx.send(free_index);
 
-            // let in_flight_fence = in_flight_fences[frame];
-            // device.lock().unwrap().reset_fences(&[in_flight_fence]).unwrap();
-            // device.lock().unwrap()
-            //     .queue_submit(queue, &[submit_info], in_flight_fence)
-            //     .unwrap();
-            // let swapchains = vec![swapchain];
-            // let image_indices = vec![image_index];
-            // let present_info = vk::PresentInfoKHRBuilder::new()
-            //     .wait_semaphores(&signal_semaphores)
-            //     .swapchains(&swapchains)
-            //     .image_indices(&image_indices);
-            // device.lock().unwrap().queue_present_khr(queue, &present_info).unwrap();
+            let in_flight_fence = frame_resources.iff[f];
+            device.reset_fences(&[in_flight_fence]).unwrap();
+            device
+                .queue_submit(queue, &[submit_info], in_flight_fence)
+                .unwrap();
+            let swapchains = vec![*swapchain.lock().unwrap()];
+            let image_indices = vec![image_index];
+            let present_info = vk::PresentInfoKHRBuilder::new()
+                .wait_semaphores(&signal_semaphores)
+                .swapchains(&swapchains)
+                .image_indices(&image_indices);
+            device.queue_present_khr(queue, &present_info).unwrap();
             *frame.lock().unwrap() = (f + 1) % FRAMES_IN_FLIGHT;
-
         }
 
         Event::LoopDestroyed => unsafe {
