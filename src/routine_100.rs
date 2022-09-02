@@ -4,11 +4,15 @@ use closure::closure;
 // erupt::extensions::khr_surface::PresentModeKHR
 //  erupt::extensions::khr_surface::SurfaceFormatKHR
 //  erupt::extensions::khr_surface::SurfaceKHR
+//  erupt::extensions::khr_swapchain::SwapchainKHR
 use erupt::{
     cstr,
+    extensions::khr_surface::{SurfaceKHR, SurfaceFormatKHR, PresentModeKHR},
+    extensions::khr_swapchain::SwapchainKHR,
+    SmallVec,
     utils::{self, surface},
     vk, DeviceLoader, EntryLoader, InstanceLoader,
-    vk::{Device, MemoryMapFlags},
+    vk::{Device, MemoryMapFlags, Image},
 };
 
 use winit::{
@@ -72,15 +76,25 @@ pub unsafe fn routine
 
     let opt = Opt { validation_layers: false };
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title(TITLE)
-        .with_resizable(true)
-        // .with_maximized(true)
-        .with_inner_size(winit::dpi::LogicalSize::new(2000, 2000))
-        .build(&event_loop)
-        .unwrap();
 
-    // let 
+    // let window = WindowBuilder::new()
+    //     .with_title(TITLE)
+    //     .with_resizable(true)
+    //     // .with_maximized(true)
+    //     .with_inner_size(winit::dpi::LogicalSize::new(2000, 2000))
+    //     .build(&event_loop)
+    //     .unwrap();
+
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title(TITLE)
+            .with_resizable(true)
+            // .with_maximized(true)
+            .with_inner_size(winit::dpi::LogicalSize::new(2000, 2000))
+            .build(&event_loop)
+            .unwrap()
+    );
+
 
     let entry = EntryLoader::new().unwrap();
     let application_name = CString::new("Erupt Routine 100").unwrap();
@@ -93,7 +107,7 @@ pub unsafe fn routine
         .api_version(vk::make_api_version(0, 1, 0, 0));
 
 
-    let mut instance_extensions = surface::enumerate_required_extensions(&window).unwrap();
+    let mut instance_extensions = surface::enumerate_required_extensions(&*window).unwrap();
     if opt.validation_layers {
         instance_extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -138,7 +152,7 @@ pub unsafe fn routine
     } else {
         Default::default()
     };
-    let surface = surface::create_surface(&instance, &window, None).unwrap();
+    let surface = surface::create_surface(&instance, &*window, None).unwrap();
 
     let (physical_device, queue_family, format, present_mode, device_properties) = instance.enumerate_physical_devices(None)
     .unwrap()
@@ -236,65 +250,24 @@ pub unsafe fn routine
     if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
         image_count = surface_caps.max_image_count;
     }
-
-    let window_inner_size = window.inner_size();
-
-    // this is the stuff to recompute on window resize.
-    let swapchain_image_extent = match surface_caps.current_extent {
-        vk::Extent2D {
-            width: u32::MAX,
-            height: u32::MAX,
-        } => {
-            let PhysicalSize { width, height } = window.inner_size();
-            // vk::Extent2D { width: 4000, height: 4000 }
-            vk::Extent2D { width, height }
-        }
-        normal => normal,
-    };
-
-    let swapchain_info = vk::SwapchainCreateInfoKHRBuilder::new()
-        .surface(surface)
-        .min_image_count(image_count)
-        .image_format(format.format)
-        .image_color_space(format.color_space)
-        .image_extent(swapchain_image_extent)
-        .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .pre_transform(surface_caps.current_transform)
-        .composite_alpha(vk::CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
-        .present_mode(present_mode)
-        .clipped(true)
-        .old_swapchain(vk::SwapchainKHR::default());
-
-    let swapchain = device.create_swapchain_khr(&swapchain_info, None).unwrap();
-    let swapchain_images = device.get_swapchain_images_khr(swapchain, None).unwrap();
-    let swapchain_image_views: Vec<_> = swapchain_images
-        .iter()
-        .map(|swapchain_image| {
-            let image_view_info = vk::ImageViewCreateInfoBuilder::new()
-                .image(*swapchain_image)
-                .view_type(vk::ImageViewType::_2D)
-                .format(format.format)
-                .components(vk::ComponentMapping {
-                    r: vk::ComponentSwizzle::IDENTITY,
-                    g: vk::ComponentSwizzle::IDENTITY,
-                    b: vk::ComponentSwizzle::IDENTITY,
-                    a: vk::ComponentSwizzle::IDENTITY,
-                })
-                .subresource_range(
-                    vk::ImageSubresourceRangeBuilder::new()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .base_mip_level(0)
-                        .level_count(1)
-                        .base_array_layer(0)
-                        .layer_count(1)
-                        .build(),
-                );
-            device.create_image_view(&image_view_info, None).unwrap()
-        })
-        .collect();
     
+
+    let present_mode = Arc::new(present_mode);
+    let format = Arc::new(format);
+    let surface = Arc::new(surface);
+    let physical_device = Arc::new(physical_device);
+    // let window2 = Arc::new(window);
+
+    let (swapchain, swapchain_images, swapchain_image_views) = create_swapchain(
+        device.clone(),
+        instance.clone(),
+        present_mode.clone(),
+        format.clone(),
+        surface.clone(),
+        physical_device.clone(),
+        window.clone(),
+    ).unwrap();
+
     // At this point we have swapchain.
 
     //https://www.intel.com/content/www/us/en/developer/articles/training/practical-approach-to-vulkan-part-1.html
@@ -403,7 +376,7 @@ pub unsafe fn routine
 
     let (mut vertices_terr, mut indices_terr) = load_model().unwrap();
 
-    let physical_device_memory_properties = instance.get_physical_device_memory_properties(physical_device);
+    let physical_device_memory_properties = instance.get_physical_device_memory_properties(*physical_device);
 
     let info = vk::CommandPoolCreateInfoBuilder::new()
             .queue_family_index(queue_family)
@@ -480,19 +453,22 @@ unsafe fn create_swapchain
 (
     device: Arc<DeviceLoader>,
     instance: Arc<InstanceLoader>,
-    present_mode: Arc<erupt::extensions::khr_surface::PresentModeKHR>,
+    // present_mode: Arc<erupt::extensions::khr_surface::PresentModeKHR>,
+    present_mode: Arc<PresentModeKHR>,
     format: Arc<erupt::extensions::khr_surface::SurfaceFormatKHR>,
     surface: Arc<erupt::extensions::khr_surface::SurfaceKHR>,
     physical_device: Arc<vk::PhysicalDevice>,
-    window: Window,
+    window: Arc<Window>,
 )
+
+//  erupt::extensions::khr_swapchain::SwapchainKHR
+-> Result<(SwapchainKHR, SmallVec<Image>, Vec<vk::ImageView>), String>
 {
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(*physical_device, *surface).unwrap();
     let mut image_count = surface_caps.min_image_count + 1;
     if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
         image_count = surface_caps.max_image_count;
     }
-
     // this is the stuff to recompute on window resize.
     let swapchain_image_extent = match surface_caps.current_extent {
         vk::Extent2D {
@@ -505,7 +481,6 @@ unsafe fn create_swapchain
         }
         normal => normal,
     };
-
     let swapchain_info = vk::SwapchainCreateInfoKHRBuilder::new()
         .surface(*surface)
         .min_image_count(image_count)
@@ -520,7 +495,6 @@ unsafe fn create_swapchain
         .present_mode(*present_mode)
         .clipped(true)
         .old_swapchain(vk::SwapchainKHR::default());
-
     let swapchain = device.create_swapchain_khr(&swapchain_info, None).unwrap();
     let swapchain_images = device.get_swapchain_images_khr(swapchain, None).unwrap();
     let swapchain_image_views: Vec<_> = swapchain_images
@@ -548,9 +522,8 @@ unsafe fn create_swapchain
             device.create_image_view(&image_view_info, None).unwrap()
         })
         .collect();
+    Ok((swapchain, swapchain_images, swapchain_image_views))
 }
-
-
 
 unsafe fn create_buffer
 (
