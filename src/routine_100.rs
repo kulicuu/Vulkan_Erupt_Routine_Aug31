@@ -442,16 +442,11 @@ pub unsafe fn routine
     
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
 
-
     // Have vertex and index buffers, uniforms partly setup
     // Vaguely recall need to set up render pass,
     // pipeline, attachments, descriptor sets
-
-
-
     // starting from the descriptor pool building line
     // 506 in 8700.
-
     let pool_size = vk::DescriptorPoolSizeBuilder::new()
         ._type(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(3 as u32);
@@ -467,11 +462,8 @@ pub unsafe fn routine
         .set_layouts(set_layouts);
     let d_sets = device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet");
     let ubo_size = ::std::mem::size_of::<UniformBufferObject>() as u64;
-
-
     // We skip the for loop for now that updates the 
     // uniform buffers.
-
     let attachments = vec![
         vk::AttachmentDescriptionBuilder::new()
             .format(format.format)
@@ -495,16 +487,13 @@ pub unsafe fn routine
     let depth_attach_ref = vk::AttachmentReferenceBuilder::new()
         .attachment(1)
         .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
     let color_attachment_refs = vec![vk::AttachmentReferenceBuilder::new()
         .attachment(0)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-
     let subpasses = vec![vk::SubpassDescriptionBuilder::new()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(&color_attachment_refs)
         .depth_stencil_attachment(&depth_attach_ref)];
-
     let dependencies = vec![vk::SubpassDependencyBuilder::new()
         .src_subpass(vk::SUBPASS_EXTERNAL)
         .dst_subpass(0)
@@ -512,23 +501,17 @@ pub unsafe fn routine
         .src_access_mask(vk::AccessFlags::empty())
         .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
         .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
-
     let render_pass_info = vk::RenderPassCreateInfoBuilder::new()
         .attachments(&attachments)
         .subpasses(&subpasses)
-        .dependencies(&dependencies);
-
-        
+        .dependencies(&dependencies);  
     let render_pass = Arc::new(
         device.create_render_pass(&render_pass_info, None).unwrap()
     );
-
-    
     // Now can create the pipeline:
     // pipeline_101
     let info = vk::DescriptorSetLayoutBindingFlagsCreateInfoBuilder::new()
         .binding_flags(&[vk::DescriptorBindingFlags::empty()]);
-
     let samplers = [vk::Sampler::default()];
     let binding = vk::DescriptorSetLayoutBindingBuilder::new()
         .binding(0)
@@ -541,7 +524,6 @@ pub unsafe fn routine
         .flags(vk::DescriptorSetLayoutCreateFlags::empty()) 
         .bindings(slice);
     let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
-
     let depth_image_info = vk::ImageCreateInfoBuilder::new()
         .flags(vk::ImageCreateFlags::empty())
         .image_type(vk::ImageType::_2D)
@@ -559,21 +541,16 @@ pub unsafe fn routine
         .sharing_mode(vk::SharingMode::EXCLUSIVE)
         .queue_family_indices(&[0])
         .initial_layout(vk::ImageLayout::UNDEFINED);
-
-
     let depth_image = device.create_image(&depth_image_info, None)
         .expect("Failed to create depth (texture) Image.");   
-
     let dpth_img_mem_reqs = device.get_image_memory_requirements(depth_image);
     let dpth_img_mem_info = vk::MemoryAllocateInfoBuilder::new()
         .memory_type_index(1)
         .allocation_size(dpth_img_mem_reqs.size);
     let depth_image_memory = device.allocate_memory(&dpth_img_mem_info, None)
         .expect("Failed to alloc mem for depth image.");
-
     device.bind_image_memory(depth_image, depth_image_memory, 0)
         .expect("Failed to bind depth image memory.");
-
     let depth_image_view_info = vk::ImageViewCreateInfoBuilder::new()
         .flags(vk::ImageViewCreateFlags::empty())
         .image(depth_image)
@@ -592,10 +569,8 @@ pub unsafe fn routine
             base_array_layer: 0,
             layer_count: 1,
         });
-
     let depth_image_view = device.create_image_view(&depth_image_view_info, None)
         .expect("Failed to create image view.");
-
     let entry_point = CString::new("main").unwrap();
     let vert_decoded = utils::decode_spv(SHADER_VERT).unwrap();
     let module_info = vk::ShaderModuleCreateInfoBuilder::new().code(&vert_decoded);
@@ -707,14 +682,228 @@ pub unsafe fn routine
 
 
 
+    // let swapchain_framebuffers_pre: Vec<_> = swapchain_image_views
+    //     .iter()
+    //     .map(|image_view| {
+    //         let attachments = vec![*image_view, depth_image_view];
+    //         let framebuffer_info = vk::FramebufferCreateInfoBuilder::new()
+    //             .render_pass(*render_pass)
+    //             .attachments(&attachments)
+    //             .width(swapchain_image_extent.width)
+    //             .height(swapchain_image_extent.height)
+    //             .layers(1);
+    //         device.create_framebuffer(&framebuffer_info, None).unwrap()
+    //     })
+    //     .collect();
+
+    
+
+
+    // Now we have the renderpass/pipeline.
+
+    // Next in 8700 is swapchain framebuffers creation.  Iirc 
+    // these are created every frame, these are the first
+    // precursor to creating command buffers.
+
+    // The framebuffers and then 
+    // the command buffer alloc.
+
+    // Then we set up initial state, initial semaphores and are ready 
+    // to create the render loop closure.
 
 
 
 
+
+
+
+    #[allow(clippy::collapsible_match, clippy::single_match)]
+    event_loop.run(move |event, _, control_flow| match event {
+        Event::NewEvents(StartCause::Init) => {
+            *control_flow = ControlFlow::Poll;
+        }
+        Event::WindowEvent { event, .. } => match event {
+            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+            _ => (),
+        },
+        Event::DeviceEvent { event, .. } => match event {
+            DeviceEvent::Key(KeyboardInput {
+                virtual_keycode: Some(keycode),
+                state,
+                ..
+            }) => match (keycode, state) {
+                (VirtualKeyCode::Escape, ElementState::Released) => {
+                    *control_flow = ControlFlow::Exit
+                },
+                // (winit::event::VirtualKeyCode::Space, ElementState::Released) => {  
+                // },
+                // (winit::event::VirtualKeyCode::Right, ElementState::Pressed) => {
+                //     tx.send(0).unwrap();
+                // },
+                // (winit::event::VirtualKeyCode::Left, ElementState::Pressed) => {
+                //     tx.send(1).unwrap();
+                // },
+                // (winit::event::VirtualKeyCode::Up, ElementState::Pressed) => {
+                //     tx.send(2).unwrap();
+                // },
+                // (winit::event::VirtualKeyCode::Down, ElementState::Pressed) => {
+                //     tx.send(3).unwrap();
+                // },
+                // (winit::event::VirtualKeyCode::Semicolon, ElementState::Pressed) => {
+                //     tx.send(4).unwrap();
+                // },
+                // (winit::event::VirtualKeyCode::Q, ElementState::Pressed) => {
+                //     tx.send(5).unwrap();
+                // },
+                _ => (),
+            },
+            _ => (),
+        },
+        Event::MainEventsCleared => {
+
+            // in flight fences by frame which is a mutable variable
+            // maybe in the multi-threaded context will be shared behind 
+            // an arc and mutex.
+
+
+
+
+            // device.wait_for_fences(&[in_flight_fences[frame]], true, u64::MAX).unwrap();
+        
+            // let image_index = device.acquire_next_image_khr
+            // (
+            //     swapchain,
+            //     u64::MAX,
+            //     // this semaphore will come from a set of frame resources
+            //     // there will be three per thread.  so it won't be in an array
+            //     // there will be one each of ias, rfs, and iff per set of frame resources
+            //     image_available_semaphores[frame],
+            //     vk::Fence::null(),
+            // ).unwrap();
+
+            // let image_in_flight = images_in_flight[image_index as usize];
+            // if !image_in_flight.is_null() {
+            //     device.lock().unwrap().wait_for_fences(&[image_in_flight], true, u64::MAX).unwrap();
+            // }
+            // images_in_flight[image_index as usize] = in_flight_fences[frame];
+            // let wait_semaphores = vec![image_available_semaphores[frame]];
+            // let framebuffer = swapchain_framebuffers_2.lock().unwrap()[image_index as usize];
+            // let signal_semaphores = vec![render_finished_semaphores[frame]];
+            
+            // let cbs_35 = [*cursor_cb.lock().unwrap()];
+
+            // let submit_info = vk::SubmitInfoBuilder::new()
+            //     .wait_semaphores(&wait_semaphores)
+            //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+            //     .command_buffers(&cbs_35)
+            //     .signal_semaphores(&signal_semaphores);
+            
+            // free_index = (image_index + 1) % 3;
+            // rcb_tx.send(free_index);
+
+            // let in_flight_fence = in_flight_fences[frame];
+            // device.lock().unwrap().reset_fences(&[in_flight_fence]).unwrap();
+            // device.lock().unwrap()
+            //     .queue_submit(queue, &[submit_info], in_flight_fence)
+            //     .unwrap();
+            // let swapchains = vec![swapchain];
+            // let image_indices = vec![image_index];
+            // let present_info = vk::PresentInfoKHRBuilder::new()
+            //     .wait_semaphores(&signal_semaphores)
+            //     .swapchains(&swapchains)
+            //     .image_indices(&image_indices);
+            // device.lock().unwrap().queue_present_khr(queue, &present_info).unwrap();
+            // frame = (frame + 1) % FRAMES_IN_FLIGHT;
+
+        }
+
+        Event::LoopDestroyed => unsafe {
+            // println!("\n\n\n Loop destroyed, ending program.\n\n");
+            // device.device_wait_idle().unwrap();
+            // for &semaphore in image_available_semaphores
+            //     .iter()
+            //     .chain(render_finished_semaphores.iter())
+            // {
+            //     device.destroy_semaphore(semaphore, None);
+            // }
+            // for &fence in &in_flight_fences {
+            //     device.destroy_fence(fence, None);
+            // }
+            // device.destroy_command_pool(command_pool, None);
+            // for &framebuffer in &swapchain_framebuffers {
+            //     device.destroy_framebuffer(framebuffer, None);
+            // }
+            // device.destroy_pipeline(pipeline, None);
+            // device.destroy_render_pass(*render_pass, None);
+            // device.destroy_pipeline_layout(pipeline_layout, None);
+            // device.destroy_shader_module(shader_vert, None);
+            // device.destroy_shader_module(shader_frag, None);
+            // for &image_view in &swapchain_image_views {
+            //     device.destroy_image_view(image_view, None);
+            // }
+            // device.destroy_swapchain_khr(swapchain, None);
+            // device.destroy_device(None);
+            // instance.destroy_surface_khr(surface, None);
+            // // instance.destroy_debug_utils_messenger_ext(messenger, None);
+            // // if !messenger.is_null() {
+            // //     instance.destroy_debug_utils_messenger_ext(messenger, None);
+            // // }
+            // instance.destroy_instance(None);
+            // println!("Exited cleanly");
+        },
+        _ => (),
+    })
 
 
 }
 
+
+// Bettter Mutex usage with:
+// pub fn get_mut(&mut self) -> LockResult<&mut T>
+
+
+unsafe fn draw_op
+(
+    device: Arc<DeviceLoader>,
+    frame: usize,
+    image_in_flight: vk::Fence,
+
+    swapchain_image_views: Arc<Mutex<Vec<Arc<vk::ImageView>>>>,
+
+
+    depth_image_view: Arc<vk::ImageView>,
+    swapchain_image_extent: Arc<vk::Extent2D>,
+    render_pass: Arc<vk::RenderPass>,
+
+
+
+)
+{
+
+
+    let image_view = *swapchain_image_views.lock().unwrap()[frame];
+
+    
+    let attachments = vec![image_view, *depth_image_view];
+    let framebuffer_info = vk::FramebufferCreateInfoBuilder::new()
+        .render_pass(*render_pass)
+        .attachments(&attachments)
+        .width(swapchain_image_extent.width)
+        .height(swapchain_image_extent.height)
+        .layers(1);
+    let swapchain_framebuffer = device.create_framebuffer(&framebuffer_info, None).unwrap();
+    
+
+
+
+
+
+    // Iirc we make fresh swapchain framebuffer every frame.
+
+    // Then allocate command buffers and record command buffer.
+
+
+}
 
 
 
@@ -838,14 +1027,33 @@ unsafe fn create_buffer
 
 
 // per thread
+// We could have 3 of these per thread.  Instead of 1 per thread with the arrays.
+// First we'll do the single threaded version
+// like this with array of three to index by frame 
+// acquired from khr.  not sure about the transition 
+// to multi-threaded, will reread that documentation material 
 struct FrameResources {
     name: Vec<u32>,
+
+    // images_in_flight: Vec<_>,
+
+
     ias: [vk::Semaphore; 3], // image available semaphores
     rfs: [vk::Semaphore; 3], // render finished semaphores
     iff: [vk::Fence; 3],
     command_pools: [vk::CommandPool; 3],
+
 }
 
+
+struct FrameResources2 {
+    ias: vk::Semaphore,
+    rfs: vk::Semaphore,
+    iff: vk::Fence,
+    command_pool: vk::CommandPool,
+    // pipeline: Arc pipeline
+    // other shared stuff like the vertex buffers?
+}
 
 unsafe fn buffer_vertices
 (
@@ -913,7 +1121,6 @@ unsafe fn buffer_vertices
 
 
 pub unsafe fn buffer_indices
-
 (
     device: Arc<DeviceLoader>,
     queue: vk::Queue,
