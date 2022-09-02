@@ -258,7 +258,12 @@ pub unsafe fn routine
     let physical_device = Arc::new(physical_device);
     // let window2 = Arc::new(window);
 
-    let (swapchain, swapchain_images, swapchain_image_views) = create_swapchain(
+    let (
+        swapchain, 
+        swapchain_images, 
+        swapchain_image_views,
+        swapchain_image_extent,
+    ) = create_swapchain(
         device.clone(),
         instance.clone(),
         present_mode.clone(),
@@ -427,6 +432,7 @@ pub unsafe fn routine
         vk::BufferUsageFlags::UNIFORM_BUFFER,
         2,
     );
+    // These will be multiplied by 3 per thread with FrameResources
     let uniform_buffer = Arc::new(Mutex::new(
         uniform_buffer,
     ));
@@ -445,6 +451,117 @@ pub unsafe fn routine
 
 
 
+    // starting from the descriptor pool building line
+    // 506 in 8700.
+
+    let pool_size = vk::DescriptorPoolSizeBuilder::new()
+        ._type(vk::DescriptorType::UNIFORM_BUFFER)
+        .descriptor_count(3 as u32);
+    let pool_sizes = &[pool_size];
+    let set_layouts = &[descriptor_set_layout];
+    let pool_info = vk::DescriptorPoolCreateInfoBuilder::new()
+        .pool_sizes(pool_sizes)
+        .max_sets(3 as u32);
+
+    let desc_pool = device.create_descriptor_pool(&pool_info, None).unwrap();
+    let d_set_alloc_info = vk::DescriptorSetAllocateInfoBuilder::new()
+        .descriptor_pool(desc_pool)
+        .set_layouts(set_layouts);
+    let d_sets = device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet");
+    let ubo_size = ::std::mem::size_of::<UniformBufferObject>() as u64;
+
+
+    // We skip the for loop for now that updates the 
+    // uniform buffers.
+
+    let attachments = vec![
+        vk::AttachmentDescriptionBuilder::new()
+            .format(format.format)
+            .samples(vk::SampleCountFlagBits::_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR),
+        vk::AttachmentDescriptionBuilder::new()
+            .format(vk::Format::D32_SFLOAT)
+            .samples(vk::SampleCountFlagBits::_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    ];
+    let depth_attach_ref = vk::AttachmentReferenceBuilder::new()
+        .attachment(1)
+        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+    let color_attachment_refs = vec![vk::AttachmentReferenceBuilder::new()
+        .attachment(0)
+        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+
+    let subpasses = vec![vk::SubpassDescriptionBuilder::new()
+        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .color_attachments(&color_attachment_refs)
+        .depth_stencil_attachment(&depth_attach_ref)];
+
+    let dependencies = vec![vk::SubpassDependencyBuilder::new()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .dst_subpass(0)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
+
+    let render_pass_info = vk::RenderPassCreateInfoBuilder::new()
+        .attachments(&attachments)
+        .subpasses(&subpasses)
+        .dependencies(&dependencies);
+
+        
+    let render_pass = Arc::new(
+        device.create_render_pass(&render_pass_info, None).unwrap()
+    );
+
+    
+    // Now can create the pipeline:
+    // pipeline_101
+    let info = vk::DescriptorSetLayoutBindingFlagsCreateInfoBuilder::new()
+        .binding_flags(&[vk::DescriptorBindingFlags::empty()]);
+
+        let samplers = [vk::Sampler::default()];
+        let binding = vk::DescriptorSetLayoutBindingBuilder::new()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .immutable_samplers(&samplers);
+        let slice = &[binding];
+        let info = vk::DescriptorSetLayoutCreateInfoBuilder::new()
+            .flags(vk::DescriptorSetLayoutCreateFlags::empty()) 
+            .bindings(slice);
+        let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
+    
+        let depth_image_info = vk::ImageCreateInfoBuilder::new()
+            .flags(vk::ImageCreateFlags::empty())
+            .image_type(vk::ImageType::_2D)
+            .format(vk::Format::D32_SFLOAT)
+            .extent(vk::Extent3D {
+                width: swapchain_image_extent.width,
+                height: swapchain_image_extent.height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .samples(vk::SampleCountFlagBits::_1)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .queue_family_indices(&[0])
+            .initial_layout(vk::ImageLayout::UNDEFINED);
+
 }
 
 
@@ -455,10 +572,9 @@ unsafe fn create_swapchain
 (
     device: Arc<DeviceLoader>,
     instance: Arc<InstanceLoader>,
-    // present_mode: Arc<erupt::extensions::khr_surface::PresentModeKHR>,
     present_mode: Arc<PresentModeKHR>,
-    format: Arc<erupt::extensions::khr_surface::SurfaceFormatKHR>,
-    surface: Arc<erupt::extensions::khr_surface::SurfaceKHR>,
+    format: Arc<SurfaceFormatKHR>,
+    surface: Arc<SurfaceKHR>,
     physical_device: Arc<vk::PhysicalDevice>,
     window: Arc<Window>,
 )
@@ -469,6 +585,7 @@ unsafe fn create_swapchain
     Arc<SwapchainKHR>, 
     Arc<SmallVec<Image>>, 
     Arc<Vec<vk::ImageView>>,
+    Arc<vk::Extent2D>,
     ), String>
 {
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(*physical_device, *surface).unwrap();
@@ -529,14 +646,12 @@ unsafe fn create_swapchain
             device.create_image_view(&image_view_info, None).unwrap()
         })
         .collect();
-    // Are these shared between threads?
-    // Probably
     Ok((
         Arc::new(swapchain), 
         Arc::new(swapchain_images), 
         Arc::new(swapchain_image_views),
+        Arc::new(swapchain_image_extent),
     ))
-
 }
 
 unsafe fn create_buffer
