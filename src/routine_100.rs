@@ -226,10 +226,12 @@ pub unsafe fn routine
     })
     .expect("No suitable physical device found");
 
+    let queue_family = Arc::new(queue_family);
+
     println!("\n\n\nUsing physical device: {:?}\n\n\n", CStr::from_ptr(device_properties.device_name.as_ptr()));
 
     let queue_info = vec![vk::DeviceQueueCreateInfoBuilder::new()
-        .queue_family_index(queue_family)
+        .queue_family_index(*queue_family)
         .queue_priorities(&[1.0])];
     let features = vk::PhysicalDeviceFeaturesBuilder::new();
     let device_info = vk::DeviceCreateInfoBuilder::new()
@@ -241,7 +243,7 @@ pub unsafe fn routine
     let device  = Arc::new(DeviceLoader::new(&instance, physical_device, &device_info).unwrap());
 
     // let mut dee = device.lock().unwrap();
-    let queue = device.get_device_queue(queue_family, 0);
+    let queue = device.get_device_queue(*queue_family, 0);
 
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(physical_device, surface).unwrap();
     let mut image_count = surface_caps.min_image_count + 1;
@@ -324,7 +326,7 @@ pub unsafe fn routine
 
     let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
         .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-        .queue_family_index(queue_family);
+        .queue_family_index(*queue_family);
 
     // let frames_resources: Vec<FrameResources> = (0..3)
     // .map(|_| {
@@ -381,7 +383,7 @@ pub unsafe fn routine
     let physical_device_memory_properties = instance.get_physical_device_memory_properties(*physical_device);
 
     let info = vk::CommandPoolCreateInfoBuilder::new()
-            .queue_family_index(queue_family)
+            .queue_family_index(*queue_family)
             .flags(vk::CommandPoolCreateFlags::TRANSIENT);
     let tcp = device.create_command_pool(&command_pool_info, None).unwrap();
 
@@ -459,7 +461,9 @@ pub unsafe fn routine
     let d_set_alloc_info = vk::DescriptorSetAllocateInfoBuilder::new()
         .descriptor_pool(desc_pool)
         .set_layouts(set_layouts);
-    let descriptor_sets = device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet");
+    let descriptor_sets = Arc::new(
+        device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet")
+    );
     let ubo_size = ::std::mem::size_of::<UniformBufferObject>() as u64;
     // We skip the for loop for now that updates the 
     // uniform buffers.
@@ -719,32 +723,27 @@ pub unsafe fn routine
     // Then we set up initial state, initial semaphores and are ready 
     // to create the render loop closure.
 
-    let clear_values = vec![
-        vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
+    let clear_values = Arc::new(
+        vec![
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
             },
-        },
-        vk::ClearValue {
-            depth_stencil: vk::ClearDepthStencilValue {
-                depth: 1.0,
-                stencil: 0,
+            vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
             },
-        },
-    ];
+        ]
+    ); 
 
 
+    let frame = Arc::new(Mutex::new(0));
     let semaphore_info = vk::SemaphoreCreateInfoBuilder::new();
     let fence_info = vk::FenceCreateInfoBuilder::new().flags(vk::FenceCreateFlags::SIGNALED);
-
-
-    // let frame_resources = FrameResources {
-
-    // }
-
-
     let frame_resources = FrameResources {
-
         device: device.clone(),
         swapchain: swapchain.clone(),
         swapchain_image_views: swapchain_image_views.clone(),
@@ -752,13 +751,13 @@ pub unsafe fn routine
         swapchain_image_extent: swapchain_image_extent.clone(),
         render_pass: render_pass.clone(),
         queue_family: queue_family.clone(),
-        clear_values: clear_values,
+        clear_values: clear_values.clone(),
         pipeline: pipeline.clone(),
         pipeline_layout: pipeline_layout.clone(),
         index_buffer: index_buffer.clone(),
         vertex_buffer: vertex_buffer.clone(),
-        descriptor_sets: descriptor_sets,
-        indices_length: indices_length,
+        descriptor_sets: descriptor_sets.clone(),
+        indices_length: indices_length.clone(),
                 // name: vec![0, 3, 7],
         ias: [ // image available semaphores
             device.create_semaphore(&semaphore_info, None).unwrap(),
@@ -828,30 +827,51 @@ pub unsafe fn routine
 
 
 
+            let f = *frame.lock().unwrap();
 
-            // device.wait_for_fences(&[in_flight_fences[frame]], true, u64::MAX).unwrap();
+            device.wait_for_fences(&[frame_resources.iff[f]], true, u64::MAX).unwrap();
         
-            // let image_index = device.acquire_next_image_khr
-            // (
-            //     swapchain,
-            //     u64::MAX,
-            //     // this semaphore will come from a set of frame resources
-            //     // there will be three per thread.  so it won't be in an array
-            //     // there will be one each of ias, rfs, and iff per set of frame resources
-            //     image_available_semaphores[frame],
-            //     vk::Fence::null(),
-            // ).unwrap();
+            let image_index = device.acquire_next_image_khr
+            (
+                *(frame_resources.swapchain.lock().unwrap()),
+                u64::MAX,
+                // this semaphore will come from a set of frame resources
+                // there will be three per thread.  so it won't be in an array
+                // there will be one each of ias, rfs, and iff per set of frame resources
+                frame_resources.ias[f],
+                vk::Fence::default(),
+            ).unwrap();
 
-            // let image_in_flight = images_in_flight[image_index as usize];
-            // if !image_in_flight.is_null() {
-            //     device.lock().unwrap().wait_for_fences(&[image_in_flight], true, u64::MAX).unwrap();
-            // }
-            // images_in_flight[image_index as usize] = in_flight_fences[frame];
-            // let wait_semaphores = vec![image_available_semaphores[frame]];
-            // let framebuffer = swapchain_framebuffers_2.lock().unwrap()[image_index as usize];
-            // let signal_semaphores = vec![render_finished_semaphores[frame]];
-            
-            // let cbs_35 = [*cursor_cb.lock().unwrap()];
+            let image_in_flight = frame_resources.iff[image_index as usize];
+
+            let wait_semaphores = vec![frame_resources.ias[f]];
+            let signal_semaphores = vec![frame_resources.rfs[f]];
+
+
+            let command_buffer = draw_op_111(
+                device.clone(),
+                f,
+                image_in_flight,
+                swapchain_image_views.clone(),
+                depth_image_view.clone(),
+                swapchain_image_extent.clone(),
+                render_pass.clone(),
+                queue_family.clone(),
+                clear_values.clone(),
+                pipeline.clone(),
+                pipeline_layout.clone(),
+                index_buffer.clone(),
+                vertex_buffer.clone(),
+                descriptor_sets.clone(),
+                indices_length.clone(),
+            );
+
+            // let submit_info = vk::SubmitInfoBuilder::new()
+            //     .wait_semaphores(&wait_semaphores)
+            //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+            //     .command_buffers]
+
+
 
             // let submit_info = vk::SubmitInfoBuilder::new()
             //     .wait_semaphores(&wait_semaphores)
@@ -874,7 +894,7 @@ pub unsafe fn routine
             //     .swapchains(&swapchains)
             //     .image_indices(&image_indices);
             // device.lock().unwrap().queue_present_khr(queue, &present_info).unwrap();
-            // frame = (frame + 1) % FRAMES_IN_FLIGHT;
+            *frame.lock().unwrap() = (f + 1) % FRAMES_IN_FLIGHT;
 
         }
 
@@ -927,42 +947,25 @@ pub unsafe fn routine
 // acquired from khr.  not sure about the transition 
 // to multi-threaded, will reread that documentation material 
 struct FrameResources {
-
-
     device: Arc<DeviceLoader>,
-    
     swapchain: Arc<Mutex<SwapchainKHR>>,
     swapchain_image_views: Arc<Mutex<Vec<Arc<vk::ImageView>>>>,
-
-
-
     depth_image_view: Arc<vk::ImageView>,
     swapchain_image_extent: Arc<vk::Extent2D>,
     render_pass: Arc<vk::RenderPass>,
-    queue_family: u32,
-    clear_values: Vec<vk::ClearValue>,
+    queue_family: Arc<u32>,
+    clear_values: Arc<Vec<vk::ClearValue>>,
     pipeline: Arc<vk::Pipeline>,
     pipeline_layout: Arc<vk::PipelineLayout>,
     index_buffer: Arc<vk::Buffer>,
     vertex_buffer: Arc<vk::Buffer>,
-    descriptor_sets: SmallVec<vk::DescriptorSet>,
+    descriptor_sets: Arc<SmallVec<vk::DescriptorSet>>,
     indices_length: Arc<usize>,
-
-
-
-    // frame: usize,
-
-    
-    // name: Vec<u32>,
-
-    // images_in_flight: Vec<_>,
-
 
     ias: [vk::Semaphore; 3], // image available semaphores
     rfs: [vk::Semaphore; 3], // render finished semaphores
-    iff: [vk::Fence; 3],
+    iff: [vk::Fence; 3], // in flight fences.
     // command_pools: [vk::CommandPool; 3],
-
 }
 
 
@@ -995,15 +998,16 @@ unsafe fn draw_op_111
     depth_image_view: Arc<vk::ImageView>,
     swapchain_image_extent: Arc<vk::Extent2D>,
     render_pass: Arc<vk::RenderPass>,
-    queue_family: u32,
-    clear_values: Vec<vk::ClearValue>,
+    queue_family: Arc<u32>,
+    clear_values: Arc<Vec<vk::ClearValue>>,
     pipeline: Arc<vk::Pipeline>,
     pipeline_layout: Arc<vk::PipelineLayout>,
     index_buffer: Arc<vk::Buffer>,
     vertex_buffer: Arc<vk::Buffer>,
-    descriptor_sets: SmallVec<vk::DescriptorSet>,
-    indices_length: Arc<u32>,
+    descriptor_sets: Arc<SmallVec<vk::DescriptorSet>>,
+    indices_length: Arc<usize>,
 )
+-> vk::CommandBuffer
 {
     let image_view = swapchain_image_views.lock().unwrap()[frame].clone();   
     let attachments = vec![*image_view, *depth_image_view];
@@ -1020,7 +1024,7 @@ unsafe fn draw_op_111
     // Then allocate command buffers and record command buffer.
     // Now allocating and recording a command buffer.
     let info = vk::CommandPoolCreateInfoBuilder::new()
-        .queue_family_index(queue_family)
+        .queue_family_index(*queue_family)
         .flags(vk::CommandPoolCreateFlags::PROTECTED);
     let command_pool = device.create_command_pool(&info, None).unwrap();
     let info = vk::CommandBufferAllocateInfoBuilder::new()
@@ -1062,14 +1066,11 @@ unsafe fn draw_op_111
         std::mem::size_of::<glm::Mat4>() as u32,
         ptr,
     );
-    device.cmd_draw_indexed(command_buffer, *indices_length, *indices_length / 3, 0, 0, 0);
+    device.cmd_draw_indexed(command_buffer, (*indices_length as u32), (*indices_length as u32) / 3, 0, 0, 0);
     device.cmd_end_render_pass(command_buffer);
     device.end_command_buffer(command_buffer).unwrap();
     // Ends recording of cb, but it has not been submitted yet.
-
-
-
-
+    command_buffer
 }
 
 
