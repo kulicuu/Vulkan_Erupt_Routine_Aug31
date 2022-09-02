@@ -439,7 +439,9 @@ pub unsafe fn routine
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
 
 
-
+    // Have vertex and index buffers, uniforms partly setup
+    // Vaguely recall need to set up render pass,
+    // pipeline, attachments, descriptor sets
 
 
 
@@ -462,7 +464,12 @@ unsafe fn create_swapchain
 )
 
 //  erupt::extensions::khr_swapchain::SwapchainKHR
--> Result<(SwapchainKHR, SmallVec<Image>, Vec<vk::ImageView>), String>
+-> Result<
+    (
+    Arc<SwapchainKHR>, 
+    Arc<SmallVec<Image>>, 
+    Arc<Vec<vk::ImageView>>,
+    ), String>
 {
     let surface_caps = instance.get_physical_device_surface_capabilities_khr(*physical_device, *surface).unwrap();
     let mut image_count = surface_caps.min_image_count + 1;
@@ -522,7 +529,14 @@ unsafe fn create_swapchain
             device.create_image_view(&image_view_info, None).unwrap()
         })
         .collect();
-    Ok((swapchain, swapchain_images, swapchain_image_views))
+    // Are these shared between threads?
+    // Probably
+    Ok((
+        Arc::new(swapchain), 
+        Arc::new(swapchain_images), 
+        Arc::new(swapchain_image_views),
+    ))
+
 }
 
 unsafe fn create_buffer
