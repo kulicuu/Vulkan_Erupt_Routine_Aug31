@@ -711,6 +711,19 @@ pub unsafe fn routine
     // Then we set up initial state, initial semaphores and are ready 
     // to create the render loop closure.
 
+    let clear_values = vec![
+        vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+        },
+        vk::ClearValue {
+            depth_stencil: vk::ClearDepthStencilValue {
+                depth: 1.0,
+                stencil: 0,
+            },
+        },
+    ];
 
 
 
@@ -882,6 +895,8 @@ unsafe fn draw_op_111
     render_pass: Arc<vk::RenderPass>,
 
     queue_family: u32,
+    clear_values: Vec<vk::ClearValue>,
+
 
 )
 {
@@ -910,9 +925,28 @@ unsafe fn draw_op_111
         .queue_family_index(queue_family)
         .flags(vk::CommandPoolCreateFlags::PROTECTED);
     let command_pool = device.create_command_pool(&info, None).unwrap();
-    
-    
 
+    let info = vk::CommandBufferAllocateInfoBuilder::new()
+        .command_pool(command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(1);
+    let command_buffer = device.allocate_command_buffers(&info).unwrap()[0];
+    let info = vk::CommandBufferBeginInfoBuilder::new()
+        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    device.begin_command_buffer(command_buffer, &info).unwrap();
+    let info = vk::RenderPassBeginInfoBuilder::new()
+        .render_pass(*render_pass)
+        .framebuffer(swapchain_framebuffer)
+        .render_area(vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: *swapchain_image_extent,
+        })
+        .clear_values(&clear_values);
+    device.cmd_begin_render_pass(
+        command_buffer,
+        &info,
+        vk::SubpassContents::INLINE,
+    );
 
 }
 
