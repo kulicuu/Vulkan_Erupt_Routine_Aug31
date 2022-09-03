@@ -237,7 +237,6 @@ pub unsafe fn routine
         image_count = surface_caps.max_image_count;
     }
     
-
     let present_mode = Arc::new(present_mode);
     let format = Arc::new(format);
     let surface = Arc::new(surface);
@@ -426,8 +425,12 @@ pub unsafe fn routine
         uniform_buffer_memory,
     ));
 
+    let x50 = -5.3;
+
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
+
+
             model: Matrix4::from_angle_y(Deg(1.0))
             * Matrix4::from_nonuniform_scale(scalar_22, scalar_22, scalar_22),
         view: Matrix4::look_at_rh(
@@ -435,17 +438,24 @@ pub unsafe fn routine
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
         ),
-        proj: {
-            let mut proj = cgmath::perspective(
-                Deg(45.0),
-                swapchain_image_extent.width as f32
-                    / swapchain_image_extent.height as f32,
-                0.1,
-                10.0,
-            );
-            proj[1][1] = proj[1][1] * -1.0;
-            proj
-        },  
+        // proj: Matrix4::from_scale(1.0),
+        proj: Matrix4::new(
+            x50, x50, x50, x50,
+            x50, x50, x50, x50,
+            x50, x50, x50, x50,
+            x50, x50, x50, x50,
+        ),
+        // proj: {
+        //     let mut proj = cgmath::perspective(
+        //         Deg(45.0),
+        //         swapchain_image_extent.width as f32
+        //             / swapchain_image_extent.height as f32,
+        //         0.1,
+        //         10.0,
+        //     );
+        //     proj[1][1] = proj[1][1] * -1.0;
+        //     proj
+        // },  
         }
     ));
 
@@ -595,7 +605,7 @@ pub unsafe fn routine
         });
     let depth_image_view = Arc::new(
         device.create_image_view(&depth_image_view_info, None)
-        .expect("Failed to create image view.")
+            .expect("Failed to create image view.")
     );
     let entry_point = CString::new("main").unwrap();
     let vert_decoded = utils::decode_spv(SHADER_VERT).unwrap();
