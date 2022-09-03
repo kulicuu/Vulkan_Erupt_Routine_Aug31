@@ -71,18 +71,8 @@ pub unsafe fn routine
 ()
 {
     println!("Routine.");
-
     let opt = Opt { validation_layers: false };
     let event_loop = EventLoop::new();
-
-    // let window = WindowBuilder::new()
-    //     .with_title(TITLE)
-    //     .with_resizable(true)
-    //     // .with_maximized(true)
-    //     .with_inner_size(winit::dpi::LogicalSize::new(2000, 2000))
-    //     .build(&event_loop)
-    //     .unwrap();
-
     let window = Arc::new(
         WindowBuilder::new()
             .with_title(TITLE)
@@ -92,8 +82,6 @@ pub unsafe fn routine
             .build(&event_loop)
             .unwrap()
     );
-
-
     let entry = EntryLoader::new().unwrap();
     let application_name = CString::new("Erupt Routine 100").unwrap();
     let engine_name = CString::new("Peregrine").unwrap();
@@ -103,8 +91,6 @@ pub unsafe fn routine
         .engine_name(&engine_name)
         .engine_version(vk::make_api_version(0, 1, 0, 0))
         .api_version(vk::make_api_version(0, 1, 0, 0));
-
-
     let mut instance_extensions = surface::enumerate_required_extensions(&*window).unwrap();
     if opt.validation_layers {
         instance_extensions.push(vk::EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -425,6 +411,7 @@ pub unsafe fn routine
     let mut uniform_buffers: Vec<vk::Buffer> = vec![];
     let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
     let swapchain_image_count = swapchain_images.len();
+    let scalar_22 = 1.5;
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
         device.clone(),
         ubo_size as u64,
@@ -438,6 +425,40 @@ pub unsafe fn routine
     let uniform_buffer_memory = Arc::new(Mutex::new(
         uniform_buffer_memory,
     ));
+
+    let uniform = Arc::new(Mutex::new(
+        UniformBufferObject {
+            model: Matrix4::from_angle_y(Deg(1.0))
+            * Matrix4::from_nonuniform_scale(scalar_22, scalar_22, scalar_22),
+        view: Matrix4::look_at_rh(
+            Point3::new(0.40, 0.40, 0.40),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        proj: {
+            let mut proj = cgmath::perspective(
+                Deg(45.0),
+                swapchain_image_extent.width as f32
+                    / swapchain_image_extent.height as f32,
+                0.1,
+                10.0,
+            );
+            proj[1][1] = proj[1][1] * -1.0;
+            proj
+        },  
+        }
+    ));
+
+    let uni_slice = [*uniform.lock().unwrap()];
+    let buffer_size = (std::mem::size_of::<UniformBufferObject>() * uni_slice.len()) as u64; 
+    let data_ptr = device.map_memory(
+        *uniform_buffer_memory.lock().unwrap(),
+        0,
+        buffer_size,
+        vk::MemoryMapFlags::empty(),
+    ).expect("Failed to map memory.") as *mut UniformBufferObject;
+    data_ptr.copy_from_nonoverlapping(uni_slice.as_ptr(), uni_slice.len());
+    device.unmap_memory(*uniform_buffer_memory.lock().unwrap());
     
 
     
@@ -825,6 +846,7 @@ pub unsafe fn routine
             // maybe in the multi-threaded context will be shared behind 
             // an arc and mutex.
 
+            // need to update the uniform buffers.  haven't done so yet.
 
 
             let f = *frame.lock().unwrap();
@@ -848,7 +870,7 @@ pub unsafe fn routine
             let signal_semaphores = vec![frame_resources.rfs[f]];
 
 
-            let command_buffer = draw_op_111(
+            let command_buffer = record_cb(
                 device.clone(),
                 f,
                 image_in_flight,
@@ -988,7 +1010,7 @@ struct FrameResources2 {
 // Consumes this mutex, returning the underlying data.
 
 
-unsafe fn draw_op_111
+unsafe fn record_cb
 (
     device: Arc<DeviceLoader>,
     frame: usize,
@@ -1053,7 +1075,12 @@ unsafe fn draw_op_111
     device.cmd_bind_descriptor_sets(command_buffer, vk::PipelineBindPoint::GRAPHICS, *pipeline_layout, 0, &descriptor_sets, &[]);
 
 
-    let pc_view = glm::Mat4::identity();
+    let pc_view: glm::Mat4 = glm::look_at_rh::<f32>
+    (
+        &glm::vec3(0.3, 0.3, 0.3),
+        &glm::vec3(0.0, 0.0, 0.0),
+        &glm::vec3(0.0, 0.0, 1.0),
+    );
 
     let ptr = std::ptr::addr_of!(pc_view) as *const c_void;
     device.cmd_push_constants
@@ -1071,9 +1098,6 @@ unsafe fn draw_op_111
     // Ends recording of cb, but it has not been submitted yet.
     command_buffer
 }
-
-
-
 
 unsafe fn create_swapchain
 (
@@ -1194,9 +1218,6 @@ unsafe fn create_buffer
     (buffer, buffer_memory)
 }
 
-
-
-
 unsafe fn buffer_vertices
 (
     d: Arc<DeviceLoader>,
@@ -1260,7 +1281,6 @@ unsafe fn buffer_vertices
     d.queue_submit(queue, &[info], vk::Fence::default()).expect("Queue submit fail.");
     Ok(vb)
 }
-
 
 pub unsafe fn buffer_indices
 (
