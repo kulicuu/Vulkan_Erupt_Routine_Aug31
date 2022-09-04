@@ -23,6 +23,9 @@ void main() {
     // gl_Position = ubo.proj * pcs.view * ubo.model * vec4(inPosition);
     // vec4 pos = vec4(inPosition);
     vec4 pos4_0 = vec4(inPosition);
+
+
+    pos4_0.y *= 0.4;
     // pos4_0.y += ubo.proj[0][0];
     
     // pos4_0.x += 0.7;

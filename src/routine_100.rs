@@ -1392,6 +1392,73 @@ fn load_model
     Ok((vertices_terr, indices_terr))
 }
     
+fn load_model_202 // Returns just a neighorhood in the vertex set, associated reduced set of indices.
+()
+-> Result<(Vec<VertexV3>, Vec<u32>), String>
+{
+    // Reducing the set of vertices is easy, just need to add 
+    // the steup of adding that index to an index accumulator object.
+    // This is a reduce with two accumulated ordererd arrays returned.
+    let path_str: &str = "assets/terrain__002__.obj";
+    let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
+    let model = models[0].clone();
+    let mut vertices_terr: Vec<VertexV3> = vec![];
+    let mesh = model.mesh;
+    let total_vertices_count = mesh.positions.len() / 3;
+    // make a ball with radius r around a point.  That will be our neighorhood around this point.
+    // let origin_vertex =  
+    // We don't know the index we want yet.  
+
+    let mut max_x_encountered: Option<f32> = None;
+    // let mut max_y_encountered: Option<f32> = None;
+
+    // let mut min x_encountered = 0.0;
+    // let mut min_x_encountered = 0.0;
+    // let 
+
+    // First we just need to run a linear search and determine the total bounds.
+    for i in 0..total_vertices_count {
+        let vertex = VertexV3 {
+            pos: [
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 2],
+                1.0,
+            ],
+            color: [0.8, 0.20, 0.30, 0.40],
+        };        
+
+        if let Some(mut max_x) = max_x_encountered {
+            // check if the current is lower than max_x andn if so change it.
+            if vertex.pos[0] > max_x {
+                max_x = vertex.pos[0];
+            }
+        } else {
+            // set max_x_encountered.
+            max_x_encountered = Some(vertex.pos[0]);
+        }
+
+
+        // if (vertex.pos[0] < bounds.x.upper_bounds) && (vertex.pos[0] > bounds.x.lower_bounds)
+        // && (vertex.pos[1] < bounds.y.upper_bounds) && (vertex.pos[1] > bounds.y.lower_bounds)
+        // && (vertex.pos[2] < bounds.z.upper_bounds && (vertex.pos[2] > bounds.z.lower_bounds)) {
+        //     vertices_terr.push(vertex);
+        // }
+        vertices_terr.push(vertex);
+    };
+    let mut indices_terr_full = mesh.indices.clone(); 
+    let mut indices_terr = vec![];
+    for i in 0..(indices_terr_full.len() / 2) {
+        indices_terr.push(indices_terr_full[i]);
+    }
+    // for i in 0..1000 {
+    //     println!("Vertices_terr x: {}, and y: {}", vertices_terr[i].pos[0], vertices_terr[i].pos[1]);
+    // }
+    // The model is in (-1.0, 1.0) in all diminsions
+    Ok((vertices_terr, indices_terr))
+}
+
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct VertexV3 {
