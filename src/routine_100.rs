@@ -71,7 +71,7 @@ pub unsafe fn routine
 ()
 {
     println!("Routine.");
-    let opt = Opt { validation_layers: false };
+    let opt = Opt { validation_layers: true };
     let event_loop = EventLoop::new();
     let window = Arc::new(
         WindowBuilder::new()
@@ -309,59 +309,7 @@ pub unsafe fn routine
 
 
 
-    let command_pool_info = vk::CommandPoolCreateInfoBuilder::new()
-        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-        .queue_family_index(*queue_family);
 
-    // let frames_resources: Vec<FrameResources> = (0..3)
-    // .map(|_| {
-    //     FrameResources {
-    //         name: vec![0, 3, 7],
-    //         ias: [ // image available semaphores
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //         ],
-    //         rfs: [ // render finished semaphores
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //             device.create_semaphore(&semaphore_info, None).unwrap(),
-    //         ],
-    //         iff: [ // in flight fences
-    //             device.create_fence(&fence_info, None).unwrap(),
-    //             device.create_fence(&fence_info, None).unwrap(),
-    //             device.create_fence(&fence_info, None).unwrap(),
-    //         ],
-    //         command_pools: [
-    //             device.create_command_pool(&command_pool_info, None).unwrap(),
-    //             device.create_command_pool(&command_pool_info, None).unwrap(),
-    //             device.create_command_pool(&command_pool_info, None).unwrap(),
-    //         ]
-    //     }
-    // })
-    // .collect();
-
-    // println!("frames_resources.len() {}", frames_resources.len());
-
-    // There are shared resources between threads. Game state.  Buffer references.
-    // Resources above are independent per thread.
-
-    // So now we need something to render to an image.  Vertex buffers, index buffers for a mesh
-    // materials, textures, transforms on objects in R^3.  Uniform buffers.
-
-    // What to render?  Akshually maybe the terrain model again, testing if we can optimize beyond
-    // the the disappointing frame rate in vulkan_8700, which is multi-threaded but likely contains 
-    // Vulkan anti-patterns.
-
-    // We can improve the matrix transforms and perspective also.  Space transforms.
-
-    // render-pass, pipeline, descriptor pools, set layouts, uniform buffer object
-    // cameras, vertex objects
-    // attachments.
-    // dependencies, 
-
-    // swapchain_framebuffers // these are re-used or no?
-    // command buffers this is ad-hoc as command pools are reset
 
     let (mut vertices_terr, mut indices_terr) = load_model().unwrap();
     let indices_length = Arc::new(indices_terr.len());
@@ -370,7 +318,35 @@ pub unsafe fn routine
     let info = vk::CommandPoolCreateInfoBuilder::new()
             .queue_family_index(*queue_family)
             .flags(vk::CommandPoolCreateFlags::TRANSIENT);
-    let tcp = device.create_command_pool(&command_pool_info, None).unwrap();
+    let tcp = device.create_command_pool(&info, None).unwrap();
+
+    let info = vk::CommandPoolCreateInfoBuilder::new()
+        .queue_family_index(*queue_family)
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+    // device.lock().unwrap().reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty()).unwrap();
+
+    // let render_command_pools = vec![
+    //     device.create_command_pool(&info, None).unwrap(),
+    //     device.create_command_pool(&info, None).unwrap(),
+    //     device.create_command_pool(&info, None).unwrap(),
+    // ];
+    
+    let render_loop_command_pool = Arc::new(
+        device.create_command_pool(&info, None).unwrap()
+    );
+    let info = vk::CommandBufferAllocateInfoBuilder::new()
+        .command_pool(*render_loop_command_pool)
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(1);
+    // let render_command_buffer = device.allocate_command_buffers(&info).unwrap()[0];
+    let render_command_buffers = Arc::new(
+        vec![
+            device.allocate_command_buffers(&info).unwrap()[0],
+            device.allocate_command_buffers(&info).unwrap()[0],
+            device.allocate_command_buffers(&info).unwrap()[0],
+        ]
+    );
+
 
 
     let vertex_buffer = Arc::new(
@@ -406,9 +382,15 @@ pub unsafe fn routine
         .flags(vk::DescriptorSetLayoutCreateFlags::empty()) 
         .bindings(bindings);
     let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
-    let ubo_size = ::std::mem::size_of::<UniformBufferObject>();
-    let mut uniform_buffers: Vec<vk::Buffer> = vec![];
-    let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
+    let ubo_size = ::std::mem::size_of::<UniformBufferObject>() * 40;
+
+
+
+    // let mut uniform_buffers: Vec<vk::Buffer> = vec![];
+    // let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
+    
+    
+    
     let swapchain_image_count = swapchain_images.len();
     let scalar_22 = 1.5;
     let (uniform_buffer, uniform_buffer_memory) = create_buffer(
@@ -425,60 +407,44 @@ pub unsafe fn routine
         uniform_buffer_memory,
     ));
 
-    let x50 = -5.3;
+    let x50 = -0.9;
 
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
-
-
             model: Matrix4::from_angle_y(Deg(1.0))
             * Matrix4::from_nonuniform_scale(scalar_22, scalar_22, scalar_22),
-        view: Matrix4::look_at_rh(
-            Point3::new(0.40, 0.40, 0.40),
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ),
-        // proj: Matrix4::from_scale(1.0),
-        proj: Matrix4::new(
-            x50, x50, x50, x50,
-            x50, x50, x50, x50,
-            x50, x50, x50, x50,
-            x50, x50, x50, x50,
-        ),
-        // proj: {
-        //     let mut proj = cgmath::perspective(
-        //         Deg(45.0),
-        //         swapchain_image_extent.width as f32
-        //             / swapchain_image_extent.height as f32,
-        //         0.1,
-        //         10.0,
-        //     );
-        //     proj[1][1] = proj[1][1] * -1.0;
-        //     proj
-        // },  
+            view: Matrix4::look_at_rh(
+                Point3::new(0.40, 0.40, 0.40),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ),
+            // proj: Matrix4::from_scale(1.0),
+            proj: Matrix4::new(
+                x50, x50, x50, x50,
+                x50, x50, x50, x50,
+                x50, x50, x50, x50,
+                x50, x50, x50, x50,
+            ),
+            // proj: {
+            //     let mut proj = cgmath::perspective(
+            //         Deg(45.0),
+            //         swapchain_image_extent.width as f32
+            //             / swapchain_image_extent.height as f32,
+            //         0.1,
+            //         10.0,
+            //     );
+            //     proj[1][1] = proj[1][1] * -1.0;
+            //     proj
+            // },  
         }
     ));
 
-    let uni_slice = [*uniform.lock().unwrap()];
-    let buffer_size = (std::mem::size_of::<UniformBufferObject>() * uni_slice.len()) as u64; 
-    let data_ptr = device.map_memory(
-        *uniform_buffer_memory.lock().unwrap(),
-        0,
-        buffer_size,
-        vk::MemoryMapFlags::empty(),
-    ).expect("Failed to map memory.") as *mut UniformBufferObject;
-    data_ptr.copy_from_nonoverlapping(uni_slice.as_ptr(), uni_slice.len());
-    device.unmap_memory(*uniform_buffer_memory.lock().unwrap());
-    
+
 
     
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
 
-    // Have vertex and index buffers, uniforms partly setup
-    // Vaguely recall need to set up render pass,
-    // pipeline, attachments, descriptor sets
-    // starting from the descriptor pool building line
-    // 506 in 8700.
+
     let pool_size = vk::DescriptorPoolSizeBuilder::new()
         ._type(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(3 as u32);
@@ -495,9 +461,31 @@ pub unsafe fn routine
     let descriptor_sets = Arc::new(
         device.allocate_descriptor_sets(&d_set_alloc_info).expect("failed in alloc DescriptorSet")
     );
-    let ubo_size = ::std::mem::size_of::<UniformBufferObject>() as u64;
+
+
+    let info = vk::DescriptorBufferInfoBuilder::new()
+        .buffer(*uniform_buffer.lock().unwrap())
+        .offset(0)
+        .range(ubo_size as u64);
+
+    let descriptor_buffer_info_builder_infos = [info];
+    let write_descriptor_set = vk::WriteDescriptorSetBuilder::new()
+        .dst_set(descriptor_sets[0])
+        .dst_binding(0)
+        .dst_array_element(0)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .buffer_info(&descriptor_buffer_info_builder_infos);
+
+    let descriptor_write_sets = [write_descriptor_set];
+
+    device.update_descriptor_sets(&descriptor_write_sets, &[]);
+    // let ubo_size = (::std::mem::size_of::<UniformBufferObject>()) as u64;
     // We skip the for loop for now that updates the 
     // uniform buffers.
+
+
+
+
     let attachments = vec![
         vk::AttachmentDescriptionBuilder::new()
             .format(format.format)
@@ -654,7 +642,7 @@ pub unsafe fn routine
         .min_depth(0.0)
         .max_depth(1.0)];
     let scissors = vec![vk::Rect2DBuilder::new()
-        .offset(vk::Offset2D { x: 0, y: 0 })
+        // .offset(vk::Offset2D { x: 0, y: 0 })
         .extent(*swapchain_image_extent)];
     let viewport_state = vk::PipelineViewportStateCreateInfoBuilder::new()
         .viewports(&viewports)
@@ -725,23 +713,6 @@ pub unsafe fn routine
 
 
 
-    // let swapchain_framebuffers_pre: Vec<_> = swapchain_image_views
-    //     .iter()
-    //     .map(|image_view| {
-    //         let attachments = vec![*image_view, depth_image_view];
-    //         let framebuffer_info = vk::FramebufferCreateInfoBuilder::new()
-    //             .render_pass(*render_pass)
-    //             .attachments(&attachments)
-    //             .width(swapchain_image_extent.width)
-    //             .height(swapchain_image_extent.height)
-    //             .layers(1);
-    //         device.create_framebuffer(&framebuffer_info, None).unwrap()
-    //     })
-    //     .collect();
-
-    
-
-
     // Now we have the renderpass/pipeline.
 
     // Next in 8700 is swapchain framebuffers creation.  Iirc 
@@ -758,7 +729,7 @@ pub unsafe fn routine
         vec![
             vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.0, 0.0, 0.0, 1.0],
+                    float32: [0.008, 0.008, 0.008, 1.0],
                 },
             },
             vk::ClearValue {
@@ -769,6 +740,7 @@ pub unsafe fn routine
             },
         ]
     ); 
+
 
 
     let frame = Arc::new(Mutex::new(0));
@@ -851,18 +823,12 @@ pub unsafe fn routine
             _ => (),
         },
         Event::MainEventsCleared => {
-
             // in flight fences by frame which is a mutable variable
             // maybe in the multi-threaded context will be shared behind 
             // an arc and mutex.
-
             // need to update the uniform buffers.  haven't done so yet.
-
-
             let f = *frame.lock().unwrap();
-
             device.wait_for_fences(&[frame_resources.iff[f]], true, u64::MAX).unwrap();
-        
             let image_index = device.acquire_next_image_khr
             (
                 *(frame_resources.swapchain.lock().unwrap()),
@@ -875,12 +841,14 @@ pub unsafe fn routine
             ).unwrap();
 
             let image_in_flight = frame_resources.iff[image_index as usize];
-
             let wait_semaphores = vec![frame_resources.ias[f]];
             let signal_semaphores = vec![frame_resources.rfs[f]];
 
 
             let command_buffer = record_cb(
+
+                render_loop_command_pool.clone(),
+                render_command_buffers.clone(),
                 device.clone(),
                 f,
                 image_in_flight,
@@ -896,6 +864,9 @@ pub unsafe fn routine
                 vertex_buffer.clone(),
                 descriptor_sets.clone(),
                 indices_length.clone(),
+                uniform.clone(),
+                uniform_buffer.clone(),
+                uniform_buffer_memory.clone(),
             );
 
             // let submit_info = vk::SubmitInfoBuilder::new()
@@ -1022,6 +993,9 @@ struct FrameResources2 {
 
 unsafe fn record_cb
 (
+
+    command_pool: Arc<vk::CommandPool>,
+    command_buffers: Arc<Vec<vk::CommandBuffer>>,
     device: Arc<DeviceLoader>,
     frame: usize,
     image_in_flight: vk::Fence,
@@ -1037,6 +1011,11 @@ unsafe fn record_cb
     vertex_buffer: Arc<vk::Buffer>,
     descriptor_sets: Arc<SmallVec<vk::DescriptorSet>>,
     indices_length: Arc<usize>,
+    uniform: Arc<Mutex<UniformBufferObject>>,
+    uniform_buffer: Arc<Mutex<vk::Buffer>>,
+    uniform_buffer_memory: Arc<Mutex<vk::DeviceMemory>>,
+
+
 )
 -> vk::CommandBuffer
 {
@@ -1049,20 +1028,26 @@ unsafe fn record_cb
         .height(swapchain_image_extent.height)
         .layers(1);
     let swapchain_framebuffer = device.create_framebuffer(&framebuffer_info, None).unwrap();
-    // make new command pool?
-    // I seem to recall that being a thing.
-    // Iirc we make fresh swapchain framebuffer every frame.
-    // Then allocate command buffers and record command buffer.
-    // Now allocating and recording a command buffer.
-    let info = vk::CommandPoolCreateInfoBuilder::new()
-        .queue_family_index(*queue_family)
-        .flags(vk::CommandPoolCreateFlags::PROTECTED);
-    let command_pool = device.create_command_pool(&info, None).unwrap();
-    let info = vk::CommandBufferAllocateInfoBuilder::new()
-        .command_pool(command_pool)
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_buffer_count(1);
-    let command_buffer = device.allocate_command_buffers(&info).unwrap()[0];
+    
+    let uni_slice = [*uniform.lock().unwrap()];
+    let buffer_size = (std::mem::size_of::<UniformBufferObject>() * uni_slice.len() * 20) as u64; 
+    let data_ptr = device.map_memory(
+        *uniform_buffer_memory.lock().unwrap(),
+        0,
+        buffer_size,
+        vk::MemoryMapFlags::empty(),
+    ).expect("Failed to map memory.") as *mut UniformBufferObject;
+    data_ptr.copy_from_nonoverlapping(uni_slice.as_ptr(), uni_slice.len());
+    device.unmap_memory(*uniform_buffer_memory.lock().unwrap());
+
+
+    let command_buffer = command_buffers[frame];
+
+    device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::RELEASE_RESOURCES);
+
+
+
+
     let info = vk::CommandBufferBeginInfoBuilder::new()
         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(command_buffer, &info).unwrap();
@@ -1083,6 +1068,8 @@ unsafe fn record_cb
     device.cmd_bind_index_buffer(command_buffer, *index_buffer, 0, vk::IndexType::UINT32);
     device.cmd_bind_vertex_buffers(command_buffer, 0, &[*vertex_buffer], &[0]);
     device.cmd_bind_descriptor_sets(command_buffer, vk::PipelineBindPoint::GRAPHICS, *pipeline_layout, 0, &descriptor_sets, &[]);
+
+    
 
 
     let pc_view: glm::Mat4 = glm::look_at_rh::<f32>
@@ -1134,13 +1121,12 @@ unsafe fn create_swapchain
         image_count = surface_caps.max_image_count;
     }
     // this is the stuff to recompute on window resize.
-    let swapchain_image_extent = match surface_caps.current_extent {
+    let swapchain_image_extent = match surface_caps.max_image_extent {
         vk::Extent2D {
             width: u32::MAX,
             height: u32::MAX,
         } => {
             let PhysicalSize { width, height } = window.inner_size();
-            // vk::Extent2D { width: 4000, height: 4000 }
             vk::Extent2D { width, height }
         }
         normal => normal,
@@ -1384,6 +1370,10 @@ fn load_model
     for i in 0..(indices_terr_full.len() / 2) {
         indices_terr.push(indices_terr_full[i]);
     }
+    // for i in 0..1000 {
+    //     println!("Vertices_terr x: {}, and y: {}", vertices_terr[i].pos[0], vertices_terr[i].pos[1]);
+    // }
+    // The model is in (-1.0, 1.0) in all diminsions
     Ok((vertices_terr, indices_terr))
 }
     
@@ -1393,7 +1383,6 @@ pub struct VertexV3 {
     pub pos: [f32; 4],
     pub color: [f32; 4],
 }
-
 
 #[repr(C)]
 #[derive(Clone, Debug, Copy)]

@@ -23,13 +23,22 @@ void main() {
     // gl_Position = ubo.proj * pcs.view * ubo.model * vec4(inPosition);
     // vec4 pos = vec4(inPosition);
     vec4 pos4_0 = vec4(inPosition);
+    // pos4_0.y += ubo.proj[0][0];
+    
+    // pos4_0.x += 0.7;
+    // pos4_0.y -= 0.7;
 
+    vec4 pos4_1 = ubo.model * pos4_0;
+    
     // pos4_0.x = pos4_0.x + (ubo.proj[0][0] * 100.0);
-    pos4_0.x = pos4_0.x + 0.5;
+    // pos4_0.x = pos4_0.x + 0.5;
     // pos4_0.y = pos4_0.y + 0.50;
-    pos4_0.y = pos4_0.y + ubo.proj[2][2];
+    // pos4_0.y = pos4_0.y + ubo.proj[2][2];
     // vec4 pos4_1 = vec4(pos4_0[0] + ubo.proj[2], pos4_0[1], pos4_0[2], pos4_0[3]);
-    gl_Position = pos4_0;
+
+
+    gl_Position =  pos4_1;
+
     // gl_Position = ubo.proj * pos;
     // gl_Position = vec4(inPosition);
     // gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition);
