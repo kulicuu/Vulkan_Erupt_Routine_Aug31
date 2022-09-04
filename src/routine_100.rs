@@ -411,8 +411,7 @@ pub unsafe fn routine
 
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
-            model: Matrix4::from_angle_y(Deg(1.0))
-            * Matrix4::from_nonuniform_scale(scalar_22, scalar_22, scalar_22),
+            model: Matrix4::from_angle_y(Deg(1.0)),
             view: Matrix4::look_at_rh(
                 Point3::new(0.40, 0.40, 0.40),
                 Point3::new(0.0, 0.0, 0.0),
@@ -779,6 +778,8 @@ pub unsafe fn routine
         ],
     };
 
+    let scale24 = Arc::new(Mutex::new(0.0));
+
 
     #[allow(clippy::collapsible_match, clippy::single_match)]
     event_loop.run(move |event, _, control_flow| match event {
@@ -845,6 +846,10 @@ pub unsafe fn routine
             let signal_semaphores = vec![frame_resources.rfs[f]];
 
 
+            let scale25 = *scale24.lock().unwrap();
+            *scale24.lock().unwrap() = scale25 + 1.5;
+            
+
             let command_buffer = record_cb(
 
                 render_loop_command_pool.clone(),
@@ -867,6 +872,7 @@ pub unsafe fn routine
                 uniform.clone(),
                 uniform_buffer.clone(),
                 uniform_buffer_memory.clone(),
+                scale24.clone()
             );
 
             // let submit_info = vk::SubmitInfoBuilder::new()
@@ -1014,7 +1020,7 @@ unsafe fn record_cb
     uniform: Arc<Mutex<UniformBufferObject>>,
     uniform_buffer: Arc<Mutex<vk::Buffer>>,
     uniform_buffer_memory: Arc<Mutex<vk::DeviceMemory>>,
-
+    scale24: Arc<Mutex<f32>>,
 
 )
 -> vk::CommandBuffer
@@ -1031,6 +1037,15 @@ unsafe fn record_cb
     
     let uni_slice = [*uniform.lock().unwrap()];
     let buffer_size = (std::mem::size_of::<UniformBufferObject>() * uni_slice.len() * 20) as u64; 
+
+
+
+    let model = uniform.lock().unwrap().model;
+    uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(0.110 * *scale24.lock().unwrap())) * model;
+    let uni_slice = [*uniform.lock().unwrap()];
+
+
+
     let data_ptr = device.map_memory(
         *uniform_buffer_memory.lock().unwrap(),
         0,
