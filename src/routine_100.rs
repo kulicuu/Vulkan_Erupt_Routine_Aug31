@@ -12,6 +12,7 @@ use erupt::{
 use memoffset::offset_of;
 use nalgebra_glm as glm;
 use std::{
+    collections::{HashSet, HashMap},
     ffi::{c_void, CStr, CString},
     fs,
     fs::{write, OpenOptions},
@@ -311,7 +312,7 @@ pub unsafe fn routine
 
 
 
-    let (mut vertices_terr, mut indices_terr) = load_model().unwrap();
+    let (mut vertices_terr, mut indices_terr) = load_model_303().unwrap();
     let indices_length = Arc::new(indices_terr.len());
     let physical_device_memory_properties = instance.get_physical_device_memory_properties(*physical_device);
 
@@ -411,7 +412,7 @@ pub unsafe fn routine
 
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
-            model: Matrix4::from_angle_y(Deg(1.0)),
+            model: Matrix4::from_angle_y(Deg(0.00001)),
             view: Matrix4::look_at_rh(
                 Point3::new(0.40, 0.40, 0.40),
                 Point3::new(0.0, 0.0, 0.0),
@@ -1385,78 +1386,310 @@ fn load_model
     for i in 0..(indices_terr_full.len() / 2) {
         indices_terr.push(indices_terr_full[i]);
     }
-    // for i in 0..1000 {
-    //     println!("Vertices_terr x: {}, and y: {}", vertices_terr[i].pos[0], vertices_terr[i].pos[1]);
-    // }
-    // The model is in (-1.0, 1.0) in all diminsions
     Ok((vertices_terr, indices_terr))
 }
-    
-fn load_model_202 // Returns just a neighorhood in the vertex set, associated reduced set of indices.
+
+
+fn load_model_303
 ()
 -> Result<(Vec<VertexV3>, Vec<u32>), String>
 {
-    // Reducing the set of vertices is easy, just need to add 
-    // the steup of adding that index to an index accumulator object.
-    // This is a reduce with two accumulated ordererd arrays returned.
+
     let path_str: &str = "assets/terrain__002__.obj";
     let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
     let model = models[0].clone();
     let mut vertices_terr: Vec<VertexV3> = vec![];
     let mesh = model.mesh;
     let total_vertices_count = mesh.positions.len() / 3;
-    // make a ball with radius r around a point.  That will be our neighorhood around this point.
-    // let origin_vertex =  
-    // We don't know the index we want yet.  
+    let ball_radius = 0.75;
 
-    let mut max_x_encountered: Option<f32> = None;
-    // let mut max_y_encountered: Option<f32> = None;
+    let mut x_closest_midpoint: Option<(usize, f32)> = None;
 
-    // let mut min x_encountered = 0.0;
-    // let mut min_x_encountered = 0.0;
-    // let 
-
-    // First we just need to run a linear search and determine the total bounds.
     for i in 0..total_vertices_count {
         let vertex = VertexV3 {
             pos: [
                 mesh.positions[i * 3],
-                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 1] / 3.0,
                 mesh.positions[i * 3 + 2],
                 1.0,
             ],
             color: [0.8, 0.20, 0.30, 0.40],
-        };        
+        };
+        vertices_terr.push(vertex);
 
-        if let Some(mut max_x) = max_x_encountered {
-            // check if the current is lower than max_x andn if so change it.
-            if vertex.pos[0] > max_x {
-                max_x = vertex.pos[0];
+        let new_x_delta = (vertex.pos[0] - 0.0).abs();
+        let new_z_delta = (vertex.pos[2] - 0.0).abs();
+        let new_delta = new_x_delta + new_z_delta;
+
+        if let Some((mid_idx, delta)) = x_closest_midpoint {
+            if new_delta < delta {
+                x_closest_midpoint = Some((i, new_delta));
             }
         } else {
-            // set max_x_encountered.
-            max_x_encountered = Some(vertex.pos[0]);
+            x_closest_midpoint = Some((i, new_delta));
         }
-
-
-        // if (vertex.pos[0] < bounds.x.upper_bounds) && (vertex.pos[0] > bounds.x.lower_bounds)
-        // && (vertex.pos[1] < bounds.y.upper_bounds) && (vertex.pos[1] > bounds.y.lower_bounds)
-        // && (vertex.pos[2] < bounds.z.upper_bounds && (vertex.pos[2] > bounds.z.lower_bounds)) {
-        //     vertices_terr.push(vertex);
-        // }
-        vertices_terr.push(vertex);
     };
+
+
     let mut indices_terr_full = mesh.indices.clone(); 
     let mut indices_terr = vec![];
-    for i in 0..(indices_terr_full.len() / 2) {
+    for i in 0..indices_terr_full.len() {
         indices_terr.push(indices_terr_full[i]);
     }
-    // for i in 0..1000 {
-    //     println!("Vertices_terr x: {}, and y: {}", vertices_terr[i].pos[0], vertices_terr[i].pos[1]);
-    // }
-    // The model is in (-1.0, 1.0) in all diminsions
-    Ok((vertices_terr, indices_terr))
+
+
+
+    let center_v = vertices_terr[x_closest_midpoint.unwrap().0];
+    let mut vertices_dropped: i32 = 0;
+    let mut verts_idx_map: HashMap<i32, Option<u32>> = HashMap::new();
+    
+    let mut culled_verts = vec![];
+    
+    for i in 0..vertices_terr.len() {
+        let vertex_candide = vertices_terr[i];
+
+        if (vertex_candide.pos[0] - center_v.pos[0]).abs() > ball_radius ||
+            (vertex_candide.pos[1] - center_v.pos[1]).abs() > ball_radius ||
+            (vertex_candide.pos[2] - center_v.pos[2]).abs() > ball_radius {
+                vertices_dropped += 1;
+                verts_idx_map.insert(i as i32, None); // This means the original idx is mapped to none, since it's dropped
+            } else {
+                verts_idx_map.insert(i as i32, Some(((i as i32) - vertices_dropped) as u32));
+                culled_verts.push(vertex_candide);
+            }
+    }
+
+    let mut culled_indices = vec![];
+
+    println!("\n");
+
+
+
+    for i in 0..indices_terr_full.len() {
+        let candide_val = verts_idx_map.get(&(indices_terr_full[i] as i32));
+        if let Some(val) = candide_val {
+            if let Some(val2) = val {
+                // println!("aou: {}", val2);
+                culled_indices.push(*val2)
+            } else {
+                // println!("None");
+            }
+        }
+        // if let Some(val) = verts_idx_map.get(&(indices_terr_full[i] as i32)) {
+
+        //     // println!("val: {}", val.unwrap());
+        //     // culled_indices.push(*val);
+        // } else {
+        //     println!("None.");
+        // }
+    }
+
+
+
+
+
+
+
+    Ok((culled_verts, culled_indices))
+    // Ok((vertices_terr, indices_terr))
 }
+
+
+
+
+// // It may make more sense to load the full set of vertices, and just send a reduced set of indices
+// // depending on where the vehicle is on the map.
+// // We figured out a routine using HashMaps to edit the index vector.
+// fn load_model_202 // Returns just a neighorhood in the vertex set, associated reduced set of indices.
+// ()
+// -> Result<(Vec<VertexV3>, Vec<u32>), String>
+// {
+//     // Reducing the set of vertices is easy, just need to add 
+//     // the steup of adding that index to an index accumulator object.
+//     // This is a reduce with two accumulated ordererd arrays returned.
+//     let path_str: &str = "assets/terrain__002__.obj";
+//     let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
+//     let model = models[0].clone();
+//     let mut vertices_terr: Vec<VertexV3> = vec![];
+//     let mesh = model.mesh;
+//     let total_vertices_count = mesh.positions.len() / 3;
+//     // make a ball with radius r around a point.  That will be our neighorhood around this point.
+//     // let origin_vertex =  
+//     // We don't know the index we want yet.  
+
+//     let mut max_x_encountered: Option<f32> = None;
+//     let mut min_x_encountered: Option<f32> = None;
+//     let mut max_y_encountered: Option<f32> = None;
+//     let mut min_y_encountered: Option<f32> = None;
+//     let mut max_z_encountered: Option<f32> = None;
+//     let mut min_z_encountered: Option<f32> = None;
+//     // let mut min x_encountered = 0.0;
+//     // let mut min_x_encountered = 0.0;
+//     // let 
+
+
+
+//     let mut x_closest_midpoint: Option<(usize, f32)> = None;
+
+//     // First we just need to run a linear search and determine the total bounds.
+//     for i in 0..total_vertices_count {
+//         let vertex = VertexV3 {
+//             pos: [
+//                 mesh.positions[i * 3],
+//                 mesh.positions[i * 3 + 1] / 5.0,
+//                 mesh.positions[i * 3 + 2],
+//                 1.0,
+//             ],
+//             color: [0.8, 0.20, 0.30, 0.40],
+//         };
+
+//         let new_x_delta = (vertex.pos[0] - 0.0).abs();
+//         let new_z_delta = (vertex.pos[2] - 0.0).abs();
+//         let new_delta = new_x_delta + new_z_delta;
+
+//         if let Some((mid_idx, delta)) = x_closest_midpoint {
+//             if new_delta < delta {
+//                 x_closest_midpoint = Some((i, new_delta));
+//             }
+//         } else {
+//             x_closest_midpoint = Some((i, new_delta));
+//         }
+//         if let Some(max_x) = max_x_encountered {
+//             if vertex.pos[0] > max_x {
+//                 max_x_encountered = Some(vertex.pos[0]);
+//             }
+//         } else {
+//             max_x_encountered = Some(vertex.pos[0]);
+//         }
+//         if let Some(min_x) = min_x_encountered {
+//             if vertex.pos[0] < min_x {
+//                 min_x_encountered = Some(vertex.pos[0]);
+//             }
+//         } else {
+//             min_x_encountered = Some(vertex.pos[0]);
+//         }
+//         if let Some(max_y) = max_y_encountered {
+//             if vertex.pos[1] > max_y {
+//                 max_y_encountered = Some(vertex.pos[1]);
+//             }
+//         } else {
+//             max_y_encountered = Some(vertex.pos[1]);
+//         }
+//         if let Some(min_y) = min_y_encountered {
+//             if vertex.pos[1] < min_y {
+//                 min_y_encountered = Some(vertex.pos[1])
+//             }
+//         } else {
+//             min_y_encountered = Some(vertex.pos[1])
+//         }
+//         if let Some(max_z) = max_z_encountered {
+//             if vertex.pos[2] > max_z {
+//                 max_z_encountered = Some(vertex.pos[2]);
+//             }
+//         } else {
+//             max_z_encountered = Some(vertex.pos[2]);
+//         }
+//         if let Some(min_z) = min_z_encountered {
+//             if vertex.pos[2] < min_z {
+//                 min_z_encountered = Some(vertex.pos[2])
+//             }
+//         } else {
+//             min_z_encountered = Some(vertex.pos[2])
+//         }
+//         vertices_terr.push(vertex);
+//     };
+
+//     println!("max_x_encountered: {}", max_x_encountered.unwrap());
+//     println!("min_x_encountered: {}", min_x_encountered.unwrap());
+//     println!("max_y_encountered: {}", max_y_encountered.unwrap());
+//     println!("min_y_encountered: {}", min_y_encountered.unwrap());
+//     println!("max_z_encountered: {}", max_z_encountered.unwrap());
+//     println!("min_z_encountered: {}", min_z_encountered.unwrap());
+
+//     if let Some((idx, x_point)) = x_closest_midpoint {
+//         println!("Our middle point, around which we will collect a neighborhood: idx: {}, x: {}, y: {}, z: {}", idx, vertices_terr[idx].pos[0], vertices_terr[idx].pos[1], vertices_terr[idx].pos[2]);
+//     }
+
+
+
+//     let center_v = vertices_terr[x_closest_midpoint.unwrap().0];
+//     let ball_radius = 0.95;
+//     println!("center_v x: {}, y: {}, z: {}", center_v.pos[0], center_v.pos[1], center_v.pos[2]);
+
+//     let mut vertices_included = vec![];
+//     // let mut indices_included = vec![];
+
+//     let indices_terr_full = mesh.indices.clone();
+//     let mut indices_terr_culled = vec![];
+
+//     for i in 0..(indices_terr_full.len()) {
+//         indices_terr_culled.push(indices_terr_full[i] as i32);
+//     }
+    
+
+//     let mut indices_to_rem = HashSet::new();
+
+//     let mut vertex_index_map = HashMap::new();
+
+
+//     for i in 0..vertices_terr.len() {
+//         // i * 3 = x component index, (i * 3) + 1 = y component index, (i * 3) + 2 = z component index
+//         let vertex_candide = vertices_terr[i];
+//         if (vertex_candide.pos[0] - center_v.pos[0]).abs() > ball_radius ||
+//             (vertex_candide.pos[1] - center_v.pos[1]).abs() > ball_radius ||
+//             (vertex_candide.pos[2] - center_v.pos[2]).abs() > ball_radius {
+//                 // exclude the indices
+//                 let x_index_rm: i32 = (i / 3) as i32;
+//                 let y_index_rm: i32 = ((i / 3) + 1) as i32;
+//                 let z_index_rm: i32 = ((i / 3) + 2) as i32;
+                
+//                 indices_to_rem.insert(x_index_rm);
+//                 indices_to_rem.insert(y_index_rm);
+//                 indices_to_rem.insert(z_index_rm);
+
+//                 let mut num_indices_rem: i32 = 0;
+//                 for j in 0..(indices_terr_culled.len()) {
+//                     if indices_terr_culled[j] == x_index_rm ||
+//                         indices_terr_culled[j] == y_index_rm ||
+//                         indices_terr_culled[j] == z_index_rm {
+//                             num_indices_rem += 1;
+//                             // indices_terr_culled.remove(j); // don't remove it just yet, we can remove at the end, with the HashSet.  We just don't decrement it.
+//                     } else {
+//                         indices_terr_culled[j] -= num_indices_rem;
+//                     }
+//                 }
+//                 // indices_removed.insert(x_i as usize);
+//                 // indices_removed.insert(((i / 3) + 1) as usize);
+//                 // indices_removed.insert(((i / 3) + 2) as usize);
+//                 // num_vertices_subtracted += 1;
+//         } else {
+//             vertices_included.push(vertex_candide);
+//         }
+//     }
+
+//     for idx in indices_terr_culled.iter().enumerate() {
+//         if indices_to_rem.contains(&idx) {
+//             indices_terr_culled.remove(idx)
+//         }
+//     }
+
+
+
+
+//     println!("vertices_included.len(): {}", vertices_included.len());
+//     // println!("indices_included.len(): {}", indices_included.len());
+
+//     let mut final_indices: Vec<u32> = vec![];
+//     for i in 0..(indices_terr_culled.len()) {
+//         final_indices.push(indices_terr_culled[i] as u32);
+//     }
+
+//     println!("final_indices.len() {}", final_indices.len());
+//     println!("vertices_included.len() {}", vertices_included.len());
+
+//     println!("\n\n");
+//     Ok((vertices_included, final_indices))
+// }
 
 
 #[repr(C)]

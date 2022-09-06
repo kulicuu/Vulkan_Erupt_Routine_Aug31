@@ -25,7 +25,7 @@ void main() {
     vec4 pos4_0 = vec4(inPosition);
 
 
-    pos4_0.y *= 0.4;
+    // pos4_0.y *= 0.4;
     // pos4_0.y += ubo.proj[0][0];
     
     // pos4_0.x += 0.7;
