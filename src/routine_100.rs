@@ -26,7 +26,7 @@ use std::{
     string::String,
     sync::{Arc, Mutex, MutexGuard, mpsc, mpsc::{channel}},
     thread,
-    time,
+    time::{Instant, Duration},
 };
 use structopt::StructOpt;
 use winit::{
@@ -312,7 +312,7 @@ pub unsafe fn routine
 
 
 
-    let (mut vertices_terr, mut indices_terr) = load_model_303().unwrap();
+    let (mut vertices_terr, mut indices_terr) = load_model_404().unwrap();
     let indices_length = Arc::new(indices_terr.len());
     let physical_device_memory_properties = instance.get_physical_device_memory_properties(*physical_device);
 
@@ -368,7 +368,6 @@ pub unsafe fn routine
         ).unwrap()
     );
     
-    // Uniform buffer 
     let info = vk::DescriptorSetLayoutBindingFlagsCreateInfoBuilder::new()
         .binding_flags(&[vk::DescriptorBindingFlags::empty()]);
     let samplers = [vk::Sampler::default()];
@@ -384,13 +383,6 @@ pub unsafe fn routine
         .bindings(bindings);
     let descriptor_set_layout = device.create_descriptor_set_layout(&info, None).unwrap();
     let ubo_size = ::std::mem::size_of::<UniformBufferObject>() * 40;
-
-
-
-    // let mut uniform_buffers: Vec<vk::Buffer> = vec![];
-    // let mut uniform_buffers_memories: Vec<vk::DeviceMemory> = vec![];
-    
-    
     
     let swapchain_image_count = swapchain_images.len();
     let scalar_22 = 1.5;
@@ -414,36 +406,15 @@ pub unsafe fn routine
         UniformBufferObject {
             model: Matrix4::from_angle_y(Deg(0.00001)),
             view: Matrix4::look_at_rh(
-                Point3::new(0.40, 0.40, 0.40),
+                Point3::new(0.0, 0.002, 0.002),
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             ),
-            // proj: Matrix4::from_scale(1.0),
-            proj: Matrix4::new(
-                x50, x50, x50, x50,
-                x50, x50, x50, x50,
-                x50, x50, x50, x50,
-                x50, x50, x50, x50,
-            ),
-            // proj: {
-            //     let mut proj = cgmath::perspective(
-            //         Deg(45.0),
-            //         swapchain_image_extent.width as f32
-            //             / swapchain_image_extent.height as f32,
-            //         0.1,
-            //         10.0,
-            //     );
-            //     proj[1][1] = proj[1][1] * -1.0;
-            //     proj
-            // },  
+            proj: Matrix4::from_angle_y(Deg(0.1)),
         }
     ));
 
-
-
-    
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
-
 
     let pool_size = vk::DescriptorPoolSizeBuilder::new()
         ._type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -692,7 +663,6 @@ pub unsafe fn routine
         device.create_pipeline_layout(&pipeline_layout_info, None).unwrap()
     );
     
-    
     // let pipeline_layout_2 = device.create_pipeline_layout(&pipeline_layout_info, None).unwrap();
     let pipeline_info = vk::GraphicsPipelineCreateInfoBuilder::new()
         .stages(&shader_stages)
@@ -782,6 +752,12 @@ pub unsafe fn routine
     let scale24 = Arc::new(Mutex::new(0.0));
 
 
+
+    let mut now = Instant::now();
+
+
+
+
     #[allow(clippy::collapsible_match, clippy::single_match)]
     event_loop.run(move |event, _, control_flow| match event {
         Event::NewEvents(StartCause::Init) => {
@@ -829,82 +805,101 @@ pub unsafe fn routine
             // maybe in the multi-threaded context will be shared behind 
             // an arc and mutex.
             // need to update the uniform buffers.  haven't done so yet.
-            let f = *frame.lock().unwrap();
-            device.wait_for_fences(&[frame_resources.iff[f]], true, u64::MAX).unwrap();
-            let image_index = device.acquire_next_image_khr
-            (
-                *(frame_resources.swapchain.lock().unwrap()),
-                u64::MAX,
-                // this semaphore will come from a set of frame resources
-                // there will be three per thread.  so it won't be in an array
-                // there will be one each of ias, rfs, and iff per set of frame resources
-                frame_resources.ias[f],
-                vk::Fence::default(),
-            ).unwrap();
-
-            let image_in_flight = frame_resources.iff[image_index as usize];
-            let wait_semaphores = vec![frame_resources.ias[f]];
-            let signal_semaphores = vec![frame_resources.rfs[f]];
-
-
-            let scale25 = *scale24.lock().unwrap();
-            *scale24.lock().unwrap() = scale25 + 1.5;
             
+            let frame_rate_delta = Duration::from_millis(10);
+            let time_delta = now.elapsed();
+            if time_delta > frame_rate_delta {
 
-            let command_buffer = record_cb(
 
-                render_loop_command_pool.clone(),
-                render_command_buffers.clone(),
-                device.clone(),
-                f,
-                image_in_flight,
-                swapchain_image_views.clone(),
-                depth_image_view.clone(),
-                swapchain_image_extent.clone(),
-                render_pass.clone(),
-                queue_family.clone(),
-                clear_values.clone(),
-                pipeline.clone(),
-                pipeline_layout.clone(),
-                index_buffer.clone(),
-                vertex_buffer.clone(),
-                descriptor_sets.clone(),
-                indices_length.clone(),
-                uniform.clone(),
-                uniform_buffer.clone(),
-                uniform_buffer_memory.clone(),
-                scale24.clone()
-            );
 
-            // let submit_info = vk::SubmitInfoBuilder::new()
-            //     .wait_semaphores(&wait_semaphores)
-            //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            //     .command_buffers]
+                let f = *frame.lock().unwrap();
+                device.wait_for_fences(&[frame_resources.iff[f]], true, u64::MAX).unwrap();
+                let image_index = device.acquire_next_image_khr
+                (
+                    *(frame_resources.swapchain.lock().unwrap()),
+                    u64::MAX,
+                    // this semaphore will come from a set of frame resources
+                    // there will be three per thread.  so it won't be in an array
+                    // there will be one each of ias, rfs, and iff per set of frame resources
+                    frame_resources.ias[f],
+                    vk::Fence::default(),
+                ).unwrap();
+    
+                let image_in_flight = frame_resources.iff[image_index as usize];
+                let wait_semaphores = vec![frame_resources.ias[f]];
+                let signal_semaphores = vec![frame_resources.rfs[f]];
+    
+    
+                let scale25 = *scale24.lock().unwrap();
+                *scale24.lock().unwrap() = scale25 + 1.5;
+                
+    
+                let command_buffer = record_cb(
+    
+                    render_loop_command_pool.clone(),
+                    render_command_buffers.clone(),
+                    device.clone(),
+                    f,
+                    image_in_flight,
+                    swapchain_image_views.clone(),
+                    depth_image_view.clone(),
+                    swapchain_image_extent.clone(),
+                    render_pass.clone(),
+                    queue_family.clone(),
+                    clear_values.clone(),
+                    pipeline.clone(),
+                    pipeline_layout.clone(),
+                    index_buffer.clone(),
+                    vertex_buffer.clone(),
+                    descriptor_sets.clone(),
+                    indices_length.clone(),
+                    uniform.clone(),
+                    uniform_buffer.clone(),
+                    uniform_buffer_memory.clone(),
+                    scale24.clone()
+                );
+    
+                // let submit_info = vk::SubmitInfoBuilder::new()
+                //     .wait_semaphores(&wait_semaphores)
+                //     .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                //     .command_buffers]
+    
+                let command_buffers = [command_buffer];
+    
+                let submit_info = vk::SubmitInfoBuilder::new()
+                    .wait_semaphores(&wait_semaphores)
+                    .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                    .command_buffers(&command_buffers)
+                    .signal_semaphores(&signal_semaphores);
+                
+                // free_index = (image_index + 1) % 3;
+                // rcb_tx.send(free_index);
+    
+                let in_flight_fence = frame_resources.iff[f];
+                device.reset_fences(&[in_flight_fence]).unwrap();
+                device
+                    .queue_submit(queue, &[submit_info], in_flight_fence)
+                    .unwrap();
+                let swapchains = vec![*swapchain.lock().unwrap()];
+                let image_indices = vec![image_index];
+                let present_info = vk::PresentInfoKHRBuilder::new()
+                    .wait_semaphores(&signal_semaphores)
+                    .swapchains(&swapchains)
+                    .image_indices(&image_indices);
+    
 
-            let command_buffers = [command_buffer];
 
-            let submit_info = vk::SubmitInfoBuilder::new()
-                .wait_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores);
+
+                device.queue_present_khr(queue, &present_info).unwrap();
+                *frame.lock().unwrap() = (f + 1) % FRAMES_IN_FLIGHT;
             
-            // free_index = (image_index + 1) % 3;
-            // rcb_tx.send(free_index);
+            
+                now = Instant::now();
+            
+            }
 
-            let in_flight_fence = frame_resources.iff[f];
-            device.reset_fences(&[in_flight_fence]).unwrap();
-            device
-                .queue_submit(queue, &[submit_info], in_flight_fence)
-                .unwrap();
-            let swapchains = vec![*swapchain.lock().unwrap()];
-            let image_indices = vec![image_index];
-            let present_info = vk::PresentInfoKHRBuilder::new()
-                .wait_semaphores(&signal_semaphores)
-                .swapchains(&swapchains)
-                .image_indices(&image_indices);
-            device.queue_present_khr(queue, &present_info).unwrap();
-            *frame.lock().unwrap() = (f + 1) % FRAMES_IN_FLIGHT;
+// Secondary buffer.  Vehicle draw.
+
         }
 
         Event::LoopDestroyed => unsafe {
@@ -1037,15 +1032,15 @@ unsafe fn record_cb
     let swapchain_framebuffer = device.create_framebuffer(&framebuffer_info, None).unwrap();
     
     let uni_slice = [*uniform.lock().unwrap()];
-    let buffer_size = (std::mem::size_of::<UniformBufferObject>() * uni_slice.len() * 20) as u64; 
-
-
+    let buffer_size = (std::mem::size_of::<UniformBufferObject>() * 20) as u64; 
+    // let buffer_size = std::mem::size_of::<UniformBufferObject>() as u64;
 
     let model = uniform.lock().unwrap().model;
-    uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(0.110 * *scale24.lock().unwrap())) * model;
+    uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(0.0110 * *scale24.lock().unwrap())) * model;
     let uni_slice = [*uniform.lock().unwrap()];
 
-
+    // let view = uniform.lock().unwrap().view;
+    // uniform.lock().unwrap().view = Matrix4::from_axis_angle(Vector3::new(1.0, 0.0, 0.0), Deg(0.110 * *scale24.lock().unwrap())) * view;
 
     let data_ptr = device.map_memory(
         *uniform_buffer_memory.lock().unwrap(),
@@ -1056,13 +1051,8 @@ unsafe fn record_cb
     data_ptr.copy_from_nonoverlapping(uni_slice.as_ptr(), uni_slice.len());
     device.unmap_memory(*uniform_buffer_memory.lock().unwrap());
 
-
     let command_buffer = command_buffers[frame];
-
     device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::RELEASE_RESOURCES);
-
-
-
 
     let info = vk::CommandBufferBeginInfoBuilder::new()
         .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -1084,9 +1074,6 @@ unsafe fn record_cb
     device.cmd_bind_index_buffer(command_buffer, *index_buffer, 0, vk::IndexType::UINT32);
     device.cmd_bind_vertex_buffers(command_buffer, 0, &[*vertex_buffer], &[0]);
     device.cmd_bind_descriptor_sets(command_buffer, vk::PipelineBindPoint::GRAPHICS, *pipeline_layout, 0, &descriptor_sets, &[]);
-
-    
-
 
     let pc_view: glm::Mat4 = glm::look_at_rh::<f32>
     (
@@ -1390,6 +1377,134 @@ fn load_model
 }
 
 
+
+fn cull_indices_for_neigh
+(
+    centerpoint: [f32; 3],
+)
+-> Vec<u32>
+{
+
+    vec![]
+}
+
+// Unlike 303, the indices don't change value, we just remove some.
+// We don't cull the vertices, and the indices remain the same, we just remove sets of three.
+// So much easier.
+fn load_model_404
+()
+-> Result<(Vec<VertexV3>, Vec<u32>), String>
+{
+
+    let path_str: &str = "assets/terrain__002__.obj";
+    let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
+    let model = models[0].clone();
+    let mut vertices_terr: Vec<VertexV3> = vec![];
+    let mesh = model.mesh;
+    let total_vertices_count = mesh.positions.len() / 3;
+    let ball_radius = 0.75;
+    let mut x_closest_midpoint: Option<(usize, f32)> = None;
+    for i in 0..total_vertices_count {
+        let vertex = VertexV3 {
+            pos: [
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1] / 3.0,
+                mesh.positions[i * 3 + 2],
+                1.0,
+            ],
+            color: [0.8, 0.20, 0.30, 0.40],
+        };
+        vertices_terr.push(vertex);
+        let new_x_delta = (vertex.pos[0] - 0.0).abs();
+        let new_z_delta = (vertex.pos[2] - 0.0).abs();
+        let new_delta = new_x_delta + new_z_delta;
+        if let Some((mid_idx, delta)) = x_closest_midpoint {
+            if new_delta < delta {
+                x_closest_midpoint = Some((i, new_delta));
+            }
+        } else {
+            x_closest_midpoint = Some((i, new_delta));
+        }
+    };
+
+    let mut indices_terr_full = mesh.indices.clone(); 
+    let mut indices_terr = vec![];
+    for i in 0..indices_terr_full.len() {
+        indices_terr.push(indices_terr_full[i]);
+    }
+    let center_v = vertices_terr[x_closest_midpoint.unwrap().0];
+    let mut vertices_dropped: i32 = 0;
+    // let mut verts_idx_map: HashMap<i32, Option<u32>> = HashMap::new();
+    // let mut culled_verts = vec![];
+    let mut indices_to_cull = HashSet::new();
+    for i in 0..vertices_terr.len() {
+        let vertex_candide = vertices_terr[i];
+        if (vertex_candide.pos[0] - center_v.pos[0]).abs() > ball_radius ||
+            (vertex_candide.pos[1] - center_v.pos[1]).abs() > ball_radius ||
+            (vertex_candide.pos[2] - center_v.pos[2]).abs() > ball_radius {
+                // vertices_dropped += 1;
+                // verts_idx_map.insert(i as i32, None); // This means the original idx is mapped to none, since it's dropped
+                indices_to_cull.insert(i);
+                indices_to_cull.insert(i + 1);
+                indices_to_cull.insert(i + 2);
+            } else {
+                // verts_idx_map.insert(i as i32, Some(((i as i32) - vertices_dropped) as u32));
+                // culled_verts.push(vertex_candide);
+            }
+    }
+    let mut culled_indices = vec![];
+    for i in 0..indices_terr_full.len() {
+        if indices_to_cull.contains(&(indices_terr_full[i] as usize)) {
+            
+        } else {
+            culled_indices.push(indices_terr_full[i]);
+        }
+    }
+    Ok((vertices_terr, culled_indices))
+}
+
+
+
+
+fn load_vehicle_model_000
+()
+->  Result<(Vec<VertexV3>, Vec<u32>), String>
+{ 
+    let indexed_vertices = vec![
+        0.021, 0.0, 0.0, // 0
+        0.0, 0.021, 0.0, // 1
+        0.0, -0.021, 0.0, // 2
+        0.0, 0.0, 0.0, // 3
+        -0.031, 0.031, 0.0, // 4
+        -0.031, -0.031, 0.0, // 5
+        0.0, 0.0, 0.011, // 6
+    ];
+    let mut vertices_vehicle = vec![];
+    for i in 0..(indexed_vertices.len() / 3) {
+        vertices_vehicle.push(VertexV3 {
+            pos: [
+                indexed_vertices[i * 3],
+                indexed_vertices[(i * 3) + 1],
+                indexed_vertices[(i * 3) + 2],
+                1.0,
+            ],
+            color: [0.8, 0.20, 0.30, 0.40],
+        })
+    }
+    let indices = vec![
+        0, 1, 2, // normal 0
+        3, 4, 1, // normal 1
+        3, 2, 5, // 2
+        6, 0, 1, // 3
+        6, 0, 2, // 4
+        6, 4, 1, // 5
+        6, 2, 5, // 6
+    ];
+    Ok((vertices_vehicle, indices))
+}
+
+// the next version should leave the vertices untouched and only cull the index-vector,
+// this can be done on the fly to render the neighborhood of interest, without changing the index vector.
 fn load_model_303
 ()
 -> Result<(Vec<VertexV3>, Vec<u32>), String>
@@ -1402,9 +1517,7 @@ fn load_model_303
     let mesh = model.mesh;
     let total_vertices_count = mesh.positions.len() / 3;
     let ball_radius = 0.75;
-
     let mut x_closest_midpoint: Option<(usize, f32)> = None;
-
     for i in 0..total_vertices_count {
         let vertex = VertexV3 {
             pos: [
@@ -1416,11 +1529,9 @@ fn load_model_303
             color: [0.8, 0.20, 0.30, 0.40],
         };
         vertices_terr.push(vertex);
-
         let new_x_delta = (vertex.pos[0] - 0.0).abs();
         let new_z_delta = (vertex.pos[2] - 0.0).abs();
         let new_delta = new_x_delta + new_z_delta;
-
         if let Some((mid_idx, delta)) = x_closest_midpoint {
             if new_delta < delta {
                 x_closest_midpoint = Some((i, new_delta));
@@ -1429,25 +1540,17 @@ fn load_model_303
             x_closest_midpoint = Some((i, new_delta));
         }
     };
-
-
     let mut indices_terr_full = mesh.indices.clone(); 
     let mut indices_terr = vec![];
     for i in 0..indices_terr_full.len() {
         indices_terr.push(indices_terr_full[i]);
     }
-
-
-
     let center_v = vertices_terr[x_closest_midpoint.unwrap().0];
     let mut vertices_dropped: i32 = 0;
     let mut verts_idx_map: HashMap<i32, Option<u32>> = HashMap::new();
-    
     let mut culled_verts = vec![];
-    
     for i in 0..vertices_terr.len() {
         let vertex_candide = vertices_terr[i];
-
         if (vertex_candide.pos[0] - center_v.pos[0]).abs() > ball_radius ||
             (vertex_candide.pos[1] - center_v.pos[1]).abs() > ball_radius ||
             (vertex_candide.pos[2] - center_v.pos[2]).abs() > ball_radius {
@@ -1458,239 +1561,18 @@ fn load_model_303
                 culled_verts.push(vertex_candide);
             }
     }
-
     let mut culled_indices = vec![];
-
-    println!("\n");
-
-
-
     for i in 0..indices_terr_full.len() {
         let candide_val = verts_idx_map.get(&(indices_terr_full[i] as i32));
         if let Some(val) = candide_val {
             if let Some(val2) = val {
-                // println!("aou: {}", val2);
                 culled_indices.push(*val2)
             } else {
-                // println!("None");
             }
         }
-        // if let Some(val) = verts_idx_map.get(&(indices_terr_full[i] as i32)) {
-
-        //     // println!("val: {}", val.unwrap());
-        //     // culled_indices.push(*val);
-        // } else {
-        //     println!("None.");
-        // }
     }
-
-
-
-
-
-
-
     Ok((culled_verts, culled_indices))
-    // Ok((vertices_terr, indices_terr))
 }
-
-
-
-
-// // It may make more sense to load the full set of vertices, and just send a reduced set of indices
-// // depending on where the vehicle is on the map.
-// // We figured out a routine using HashMaps to edit the index vector.
-// fn load_model_202 // Returns just a neighorhood in the vertex set, associated reduced set of indices.
-// ()
-// -> Result<(Vec<VertexV3>, Vec<u32>), String>
-// {
-//     // Reducing the set of vertices is easy, just need to add 
-//     // the steup of adding that index to an index accumulator object.
-//     // This is a reduce with two accumulated ordererd arrays returned.
-//     let path_str: &str = "assets/terrain__002__.obj";
-//     let (models, materials) = tobj::load_obj(&path_str, &tobj::LoadOptions::default()).expect("Failed to load model object!");
-//     let model = models[0].clone();
-//     let mut vertices_terr: Vec<VertexV3> = vec![];
-//     let mesh = model.mesh;
-//     let total_vertices_count = mesh.positions.len() / 3;
-//     // make a ball with radius r around a point.  That will be our neighorhood around this point.
-//     // let origin_vertex =  
-//     // We don't know the index we want yet.  
-
-//     let mut max_x_encountered: Option<f32> = None;
-//     let mut min_x_encountered: Option<f32> = None;
-//     let mut max_y_encountered: Option<f32> = None;
-//     let mut min_y_encountered: Option<f32> = None;
-//     let mut max_z_encountered: Option<f32> = None;
-//     let mut min_z_encountered: Option<f32> = None;
-//     // let mut min x_encountered = 0.0;
-//     // let mut min_x_encountered = 0.0;
-//     // let 
-
-
-
-//     let mut x_closest_midpoint: Option<(usize, f32)> = None;
-
-//     // First we just need to run a linear search and determine the total bounds.
-//     for i in 0..total_vertices_count {
-//         let vertex = VertexV3 {
-//             pos: [
-//                 mesh.positions[i * 3],
-//                 mesh.positions[i * 3 + 1] / 5.0,
-//                 mesh.positions[i * 3 + 2],
-//                 1.0,
-//             ],
-//             color: [0.8, 0.20, 0.30, 0.40],
-//         };
-
-//         let new_x_delta = (vertex.pos[0] - 0.0).abs();
-//         let new_z_delta = (vertex.pos[2] - 0.0).abs();
-//         let new_delta = new_x_delta + new_z_delta;
-
-//         if let Some((mid_idx, delta)) = x_closest_midpoint {
-//             if new_delta < delta {
-//                 x_closest_midpoint = Some((i, new_delta));
-//             }
-//         } else {
-//             x_closest_midpoint = Some((i, new_delta));
-//         }
-//         if let Some(max_x) = max_x_encountered {
-//             if vertex.pos[0] > max_x {
-//                 max_x_encountered = Some(vertex.pos[0]);
-//             }
-//         } else {
-//             max_x_encountered = Some(vertex.pos[0]);
-//         }
-//         if let Some(min_x) = min_x_encountered {
-//             if vertex.pos[0] < min_x {
-//                 min_x_encountered = Some(vertex.pos[0]);
-//             }
-//         } else {
-//             min_x_encountered = Some(vertex.pos[0]);
-//         }
-//         if let Some(max_y) = max_y_encountered {
-//             if vertex.pos[1] > max_y {
-//                 max_y_encountered = Some(vertex.pos[1]);
-//             }
-//         } else {
-//             max_y_encountered = Some(vertex.pos[1]);
-//         }
-//         if let Some(min_y) = min_y_encountered {
-//             if vertex.pos[1] < min_y {
-//                 min_y_encountered = Some(vertex.pos[1])
-//             }
-//         } else {
-//             min_y_encountered = Some(vertex.pos[1])
-//         }
-//         if let Some(max_z) = max_z_encountered {
-//             if vertex.pos[2] > max_z {
-//                 max_z_encountered = Some(vertex.pos[2]);
-//             }
-//         } else {
-//             max_z_encountered = Some(vertex.pos[2]);
-//         }
-//         if let Some(min_z) = min_z_encountered {
-//             if vertex.pos[2] < min_z {
-//                 min_z_encountered = Some(vertex.pos[2])
-//             }
-//         } else {
-//             min_z_encountered = Some(vertex.pos[2])
-//         }
-//         vertices_terr.push(vertex);
-//     };
-
-//     println!("max_x_encountered: {}", max_x_encountered.unwrap());
-//     println!("min_x_encountered: {}", min_x_encountered.unwrap());
-//     println!("max_y_encountered: {}", max_y_encountered.unwrap());
-//     println!("min_y_encountered: {}", min_y_encountered.unwrap());
-//     println!("max_z_encountered: {}", max_z_encountered.unwrap());
-//     println!("min_z_encountered: {}", min_z_encountered.unwrap());
-
-//     if let Some((idx, x_point)) = x_closest_midpoint {
-//         println!("Our middle point, around which we will collect a neighborhood: idx: {}, x: {}, y: {}, z: {}", idx, vertices_terr[idx].pos[0], vertices_terr[idx].pos[1], vertices_terr[idx].pos[2]);
-//     }
-
-
-
-//     let center_v = vertices_terr[x_closest_midpoint.unwrap().0];
-//     let ball_radius = 0.95;
-//     println!("center_v x: {}, y: {}, z: {}", center_v.pos[0], center_v.pos[1], center_v.pos[2]);
-
-//     let mut vertices_included = vec![];
-//     // let mut indices_included = vec![];
-
-//     let indices_terr_full = mesh.indices.clone();
-//     let mut indices_terr_culled = vec![];
-
-//     for i in 0..(indices_terr_full.len()) {
-//         indices_terr_culled.push(indices_terr_full[i] as i32);
-//     }
-    
-
-//     let mut indices_to_rem = HashSet::new();
-
-//     let mut vertex_index_map = HashMap::new();
-
-
-//     for i in 0..vertices_terr.len() {
-//         // i * 3 = x component index, (i * 3) + 1 = y component index, (i * 3) + 2 = z component index
-//         let vertex_candide = vertices_terr[i];
-//         if (vertex_candide.pos[0] - center_v.pos[0]).abs() > ball_radius ||
-//             (vertex_candide.pos[1] - center_v.pos[1]).abs() > ball_radius ||
-//             (vertex_candide.pos[2] - center_v.pos[2]).abs() > ball_radius {
-//                 // exclude the indices
-//                 let x_index_rm: i32 = (i / 3) as i32;
-//                 let y_index_rm: i32 = ((i / 3) + 1) as i32;
-//                 let z_index_rm: i32 = ((i / 3) + 2) as i32;
-                
-//                 indices_to_rem.insert(x_index_rm);
-//                 indices_to_rem.insert(y_index_rm);
-//                 indices_to_rem.insert(z_index_rm);
-
-//                 let mut num_indices_rem: i32 = 0;
-//                 for j in 0..(indices_terr_culled.len()) {
-//                     if indices_terr_culled[j] == x_index_rm ||
-//                         indices_terr_culled[j] == y_index_rm ||
-//                         indices_terr_culled[j] == z_index_rm {
-//                             num_indices_rem += 1;
-//                             // indices_terr_culled.remove(j); // don't remove it just yet, we can remove at the end, with the HashSet.  We just don't decrement it.
-//                     } else {
-//                         indices_terr_culled[j] -= num_indices_rem;
-//                     }
-//                 }
-//                 // indices_removed.insert(x_i as usize);
-//                 // indices_removed.insert(((i / 3) + 1) as usize);
-//                 // indices_removed.insert(((i / 3) + 2) as usize);
-//                 // num_vertices_subtracted += 1;
-//         } else {
-//             vertices_included.push(vertex_candide);
-//         }
-//     }
-
-//     for idx in indices_terr_culled.iter().enumerate() {
-//         if indices_to_rem.contains(&idx) {
-//             indices_terr_culled.remove(idx)
-//         }
-//     }
-
-
-
-
-//     println!("vertices_included.len(): {}", vertices_included.len());
-//     // println!("indices_included.len(): {}", indices_included.len());
-
-//     let mut final_indices: Vec<u32> = vec![];
-//     for i in 0..(indices_terr_culled.len()) {
-//         final_indices.push(indices_terr_culled[i] as u32);
-//     }
-
-//     println!("final_indices.len() {}", final_indices.len());
-//     println!("vertices_included.len() {}", vertices_included.len());
-
-//     println!("\n\n");
-//     Ok((vertices_included, final_indices))
-// }
-
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
