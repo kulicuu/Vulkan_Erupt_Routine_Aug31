@@ -31,7 +31,7 @@ void main() {
     // pos4_0.x += 0.7;
     // pos4_0.y -= 0.7;
 
-    vec4 pos4_1 = ubo.model * pos4_0;
+    vec4 pos4_1 = ubo.proj * ubo.view * ubo.model * pos4_0;
     
     // pos4_0.x = pos4_0.x + (ubo.proj[0][0] * 100.0);
     // pos4_0.x = pos4_0.x + 0.5;

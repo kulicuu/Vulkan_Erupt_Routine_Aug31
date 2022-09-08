@@ -1,4 +1,4 @@
-use cgmath::{Deg, Rad, Matrix4, Point3, Vector3, Vector4};
+use cgmath::{Deg, InnerSpace, Rad, Matrix4, Point3, Vector3, Vector4};
 use closure::closure;
 use erupt::{
     cstr,
@@ -404,15 +404,26 @@ pub unsafe fn routine
 
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
-            model: Matrix4::from_angle_y(Deg(0.00001)),
+            model: Matrix4::from_scale(1.0),
             view: Matrix4::look_at_rh(
-                Point3::new(0.0, 0.002, 0.002),
-                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.82, 0.82, 0.82), // position of the vehicle
+                Point3::new(-0.22, -0.22, -0.22), // direction looking
                 Vector3::new(0.0, 0.0, 1.0),
             ),
-            proj: Matrix4::from_angle_y(Deg(0.1)),
+            // proj: Matrix4::from_angle_y(Deg(0.1)),
+            proj: cgmath::perspective(Deg(80.0), 1.3, 0.1, 1000.0).into()
         }
     ));
+
+
+    let state = State {
+        camera_vehicle: CameraVehicle {
+            position: Vector3::new(0.82, 0.82, 0.82),
+            vifo_orientation: cgmath::Vector3::new(-0.22, -0.22, -0.22).normalize(),
+            vifo_up: Vector3::new(0.0, 0.0, 1.0),
+            velocity: 0.0,
+        },
+    };
 
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
 
@@ -755,7 +766,9 @@ pub unsafe fn routine
 
     let mut now = Instant::now();
 
-
+    let model = uniform.lock().unwrap().model;
+    uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(90.0)) * model;
+    let uni_slice = [*uniform.lock().unwrap()];
 
 
     #[allow(clippy::collapsible_match, clippy::single_match)]
@@ -806,7 +819,7 @@ pub unsafe fn routine
             // an arc and mutex.
             // need to update the uniform buffers.  haven't done so yet.
             
-            let frame_rate_delta = Duration::from_millis(10);
+            let frame_rate_delta = Duration::from_millis(100);
             let time_delta = now.elapsed();
             if time_delta > frame_rate_delta {
 
@@ -898,7 +911,7 @@ pub unsafe fn routine
             
             }
 
-// Secondary buffer.  Vehicle draw.
+            // control_flow::wait(Instant::now().checked_add(Duration::from_millis(100)));
 
         }
 
@@ -1035,9 +1048,11 @@ unsafe fn record_cb
     let buffer_size = (std::mem::size_of::<UniformBufferObject>() * 20) as u64; 
     // let buffer_size = std::mem::size_of::<UniformBufferObject>() as u64;
 
-    let model = uniform.lock().unwrap().model;
-    uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(0.0110 * *scale24.lock().unwrap())) * model;
-    let uni_slice = [*uniform.lock().unwrap()];
+    // let model = uniform.lock().unwrap().model;
+    // uniform.lock().unwrap().model = Matrix4::from_axis_angle(Vector3::new(0.0, 1.0, 0.0), Deg(-0.110 * *scale24.lock().unwrap())) * model;
+    // let uni_slice = [*uniform.lock().unwrap()];
+
+
 
     // let view = uniform.lock().unwrap().view;
     // uniform.lock().unwrap().view = Matrix4::from_axis_angle(Vector3::new(1.0, 0.0, 0.0), Deg(0.110 * *scale24.lock().unwrap())) * view;
@@ -1479,6 +1494,8 @@ fn load_vehicle_model_000
         -0.031, -0.031, 0.0, // 5
         0.0, 0.0, 0.011, // 6
     ];
+
+
     let mut vertices_vehicle = vec![];
     for i in 0..(indexed_vertices.len() / 3) {
         vertices_vehicle.push(VertexV3 {
@@ -1500,8 +1517,44 @@ fn load_vehicle_model_000
         6, 4, 1, // 5
         6, 2, 5, // 6
     ];
+
+
+
+    // let norm_faces = indexed_vertices.iter().map(|| )
+
+
+
+
+
     Ok((vertices_vehicle, indices))
 }
+
+
+fn load_vertex_100
+()
+{
+    // modify color, populate a reflectance structure for the material which can vary arbitrarly as long as it's only computed once.
+}
+
+
+// fn load_vertex_000
+// (
+//     idx: usize,
+//     pos_coords: Vec<f32>,
+// )
+// -> Result<VertexV3, String>
+// {
+//     VertexV3 {
+//         pos: [
+//             pos_coords.x,
+//             pos_coords.y,
+//             pos_coords.z,
+//             1.0,
+//         ],
+//         color: [0.1, 0.8, 0.2, 1.0],
+//     }
+// }
+
 
 // the next version should leave the vertices untouched and only cull the index-vector,
 // this can be done on the fly to render the neighborhood of interest, without changing the index vector.
@@ -1574,12 +1627,34 @@ fn load_model_303
     Ok((culled_verts, culled_indices))
 }
 
+
+struct CameraVehicle {
+    position: Vector3<f32>,
+    vifo_orientation: Vector3<f32>, // normal vector
+    vifo_up: Vector3<f32>, // normal vector pointing up in the camera vehicle frame
+    velocity: f32,// in the forward direction only
+}
+
+struct State {
+    camera_vehicle: CameraVehicle,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct VertexV3 {
     pub pos: [f32; 4],
     pub color: [f32; 4],
 }
+// even just with alpha we can do nice transparencies in materials.
+// add reflectance for more
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VertexV3M {
+    pub pos: [f32; 4],
+    pub color: [f32; 4],
+    // pub reflectance: []
+}
+
 
 #[repr(C)]
 #[derive(Clone, Debug, Copy)]
