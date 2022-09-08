@@ -414,11 +414,11 @@ pub unsafe fn routine
             vifo_orientation: Vector3::new(-0.22, -0.22, -0.22).normalize(),
             vifo_up: Vector3::new(0.0, 0.0, 1.0),
             velocity: 0.0,
-            control_inputs: ControlInputs {
-                roll: 0.0,
-                pitch: 0.0,
-                yaw: 0.0,
-            }
+            // control_inputs: ControlInputs {
+            //     roll: 0.0,
+            //     pitch: 0.0,
+            //     yaw: 0.0,
+            // }
         },
     }));
 
@@ -435,7 +435,7 @@ pub unsafe fn routine
                 s.camera_vehicle.vifo_up,
             ),
             // proj: Matrix4::from_angle_y(Deg(0.1)),
-            proj: cgmath::perspective(Deg(80.0), 1.3, 0.1, 1000.0).into()
+            proj: cgmath::perspective(Deg(60.0), 1.3, 0.1, 1000.0).into()
         }
     ));
 
@@ -788,6 +788,60 @@ pub unsafe fn routine
     let uni_slice = [*uniform.lock().unwrap()];
 
 
+
+    let (tx, rx) : (mpsc::Sender<u8>, mpsc::Receiver<u8>) = channel();
+
+    let state_thread_closure = closure!(
+        move rx,
+        clone game_state,
+        ||
+        {
+            while true {
+                let input = rx.recv().unwrap();
+                // let mut s = game_state.lock().unwrap();
+                match input {
+                    0 => {
+                        let vifo_up = game_state.lock().unwrap().camera_vehicle.vifo_up;
+                        let vifo_orientation = game_state.lock().unwrap().camera_vehicle.vifo_orientation;
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = Matrix3::from_axis_angle(vifo_orientation, Rad(-0.01)) * vifo_up;
+                    },
+                    1 => {
+                        let vifo_up = game_state.lock().unwrap().camera_vehicle.vifo_up;
+                        let vifo_orientation = game_state.lock().unwrap().camera_vehicle.vifo_orientation;
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = Matrix3::from_axis_angle(vifo_orientation, Rad(0.01)) * vifo_up;
+                    },
+                    2 => {
+                        let vifo_up = game_state.lock().unwrap().camera_vehicle.vifo_up;
+                        let vifo_orientation = game_state.lock().unwrap().camera_vehicle.vifo_orientation;
+                        let pitch_axis = vifo_up.cross(vifo_orientation).normalize();
+                        let pitch_transform = Matrix3::from_axis_angle(pitch_axis, Rad(-0.01));
+                        game_state.lock().unwrap().camera_vehicle.vifo_orientation = pitch_transform * vifo_orientation;
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = pitch_transform * vifo_up;
+                        // if we cross product the up with the orientation vectors we get the pitch axis
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = Matrix3::from_axis_angle(pitch_axis, Rad(-0.01)) * vifo_up;
+                    },
+                    3 => {
+                        let vifo_up = game_state.lock().unwrap().camera_vehicle.vifo_up;
+                        let vifo_orientation = game_state.lock().unwrap().camera_vehicle.vifo_orientation;
+                        let pitch_axis = vifo_up.cross(vifo_orientation).normalize();
+                        let pitch_transform = Matrix3::from_axis_angle(pitch_axis, Rad(0.01));
+                        game_state.lock().unwrap().camera_vehicle.vifo_orientation = pitch_transform * vifo_orientation;
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = pitch_transform * vifo_up;
+                        // if we cross product the up with the orientation vectors we get the pitch axis
+                        game_state.lock().unwrap().camera_vehicle.vifo_up = Matrix3::from_axis_angle(pitch_axis, Rad(0.01)) * vifo_up;
+                    },
+
+                    _ => {
+                    }
+                }
+            }
+        }
+    );
+
+    thread::spawn(state_thread_closure);
+
+
+
     #[allow(clippy::collapsible_match, clippy::single_match)]
     event_loop.run(move |event, _, control_flow| match event {
         Event::NewEvents(StartCause::Init) => {
@@ -809,17 +863,19 @@ pub unsafe fn routine
                 // (winit::event::VirtualKeyCode::Space, ElementState::Released) => {  
                 // },
                 (winit::event::VirtualKeyCode::Right, ElementState::Pressed) => {
-                    game_state.lock().unwrap().camera_vehicle.control_inputs.roll += 0.01;
+                    // game_state.lock().unwrap().camera_vehicle.control_inputs.roll += 0.01;
+                    tx.send(0).unwrap();
                 },
                 (winit::event::VirtualKeyCode::Left, ElementState::Pressed) => {
-                    game_state.lock().unwrap().camera_vehicle.control_inputs.roll -= 0.01;
+                    // game_state.lock().unwrap().camera_vehicle.control_inputs.roll -= 0.01;
+                    tx.send(1).unwrap();
                 },
-                // (winit::event::VirtualKeyCode::Up, ElementState::Pressed) => {
-                //     tx.send(2).unwrap();
-                // },
-                // (winit::event::VirtualKeyCode::Down, ElementState::Pressed) => {
-                //     tx.send(3).unwrap();
-                // },
+                (winit::event::VirtualKeyCode::Up, ElementState::Pressed) => {
+                    tx.send(2).unwrap();
+                },
+                (winit::event::VirtualKeyCode::Down, ElementState::Pressed) => {
+                    tx.send(3).unwrap();
+                },
                 // (winit::event::VirtualKeyCode::Semicolon, ElementState::Pressed) => {
                 //     tx.send(4).unwrap();
                 // },
@@ -1432,7 +1488,9 @@ fn load_model
 }
 
 
-
+// Originally we culled vertices from the terrain and then calculated the new indices values.
+// Now we leave the vertex buffer unchanged loading all the terrain vertices, but we calculate the 
+// indices to draw based on the neighborhood around the camerah-vehicle location.
 fn cull_indices_for_neigh
 (
     centerpoint: [f32; 3],
@@ -1674,21 +1732,21 @@ fn update_state
 )
 {
     // roll moves the up vector around the vifo_orientation axis
-    let mut s = state.lock().unwrap();
+    // let mut s = state.lock().unwrap();
 
 
-    let vifo_up = s.camera_vehicle.vifo_up;
-    let vifo_orientation = s.camera_vehicle.vifo_orientation;
-    let roll = s.camera_vehicle.control_inputs.roll;
-    s.camera_vehicle.vifo_up = Matrix3::from_axis_angle(vifo_orientation, Rad(roll)) * vifo_up;
+    // let vifo_up = s.camera_vehicle.vifo_up;
+    // let vifo_orientation = s.camera_vehicle.vifo_orientation;
+    // let roll = s.camera_vehicle.control_inputs.roll;
+    // s.camera_vehicle.vifo_up = Matrix3::from_axis_angle(vifo_orientation, Rad(roll)) * vifo_up;
 
     // s.camera_vehicle.vifo_up = Matrix3::
-    s.camera_vehicle.control_inputs = ControlInputs {
-        roll: 0.0,
-        pitch: 0.0,
-        yaw: 0.0,
-    };
-    drop(s);
+    // s.camera_vehicle.control_inputs = ControlInputs {
+    //     roll: 0.0,
+    //     pitch: 0.0,
+    //     yaw: 0.0,
+    // };
+    // drop(s);
 
 
 }
@@ -1707,7 +1765,7 @@ struct CameraVehicle {
     vifo_orientation: Vector3<f32>, // normal vector
     vifo_up: Vector3<f32>, // normal vector pointing up in the camera vehicle frame
     velocity: f32,// in the forward direction only
-    control_inputs: ControlInputs,
+    // control_inputs: ControlInputs,
 }
 
 struct State {
