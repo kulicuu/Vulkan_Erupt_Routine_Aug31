@@ -1,4 +1,8 @@
-use cgmath::{Deg, InnerSpace, Rad, Matrix4, Point3, Vector3, Vector4};
+use cgmath::{
+    Deg, InnerSpace, Rad, 
+    Matrix4, Matrix3, Point3, 
+    Vector3, Vector4,
+};
 use closure::closure;
 use erupt::{
     cstr,
@@ -402,28 +406,41 @@ pub unsafe fn routine
 
     let x50 = -0.9;
 
+
+
+    let game_state = Arc::new(Mutex::new(State {
+        camera_vehicle: CameraVehicle {
+            position: Vector3::new(0.82, 0.82, 0.82),
+            vifo_orientation: Vector3::new(-0.22, -0.22, -0.22).normalize(),
+            vifo_up: Vector3::new(0.0, 0.0, 1.0),
+            velocity: 0.0,
+            control_inputs: ControlInputs {
+                roll: 0.0,
+                pitch: 0.0,
+                yaw: 0.0,
+            }
+        },
+    }));
+
+    let mut s = game_state.lock().unwrap();
     let uniform = Arc::new(Mutex::new(
         UniformBufferObject {
             model: Matrix4::from_scale(1.0),
             view: Matrix4::look_at_rh(
-                Point3::new(0.82, 0.82, 0.82), // position of the vehicle
-                Point3::new(-0.22, -0.22, -0.22), // direction looking
-                Vector3::new(0.0, 0.0, 1.0),
+                Point3::new(s.camera_vehicle.position[0], s.camera_vehicle.position[1], s.camera_vehicle.position[2]),
+                // Point3::new(0.82, 0.82, 0.82), // position of the vehicle
+                // Point3::new(-0.22, -0.22, -0.22), // direction looking
+                Point3::new(s.camera_vehicle.vifo_orientation[0], s.camera_vehicle.vifo_orientation[1], s.camera_vehicle.vifo_orientation[2]),
+                // Vector3::new(0.0, 0.0, 1.0),
+                s.camera_vehicle.vifo_up,
             ),
             // proj: Matrix4::from_angle_y(Deg(0.1)),
             proj: cgmath::perspective(Deg(80.0), 1.3, 0.1, 1000.0).into()
         }
     ));
 
+    drop(s);
 
-    let state = State {
-        camera_vehicle: CameraVehicle {
-            position: Vector3::new(0.82, 0.82, 0.82),
-            vifo_orientation: cgmath::Vector3::new(-0.22, -0.22, -0.22).normalize(),
-            vifo_up: Vector3::new(0.0, 0.0, 1.0),
-            velocity: 0.0,
-        },
-    };
 
 // https://www.intel.com/content/www/us/en/developer/articles/training/api-without-secrets-introduction-to-vulkan-part-4.html
 
@@ -791,12 +808,12 @@ pub unsafe fn routine
                 },
                 // (winit::event::VirtualKeyCode::Space, ElementState::Released) => {  
                 // },
-                // (winit::event::VirtualKeyCode::Right, ElementState::Pressed) => {
-                //     tx.send(0).unwrap();
-                // },
-                // (winit::event::VirtualKeyCode::Left, ElementState::Pressed) => {
-                //     tx.send(1).unwrap();
-                // },
+                (winit::event::VirtualKeyCode::Right, ElementState::Pressed) => {
+                    game_state.lock().unwrap().camera_vehicle.control_inputs.roll += 0.01;
+                },
+                (winit::event::VirtualKeyCode::Left, ElementState::Pressed) => {
+                    game_state.lock().unwrap().camera_vehicle.control_inputs.roll -= 0.01;
+                },
                 // (winit::event::VirtualKeyCode::Up, ElementState::Pressed) => {
                 //     tx.send(2).unwrap();
                 // },
@@ -821,6 +838,14 @@ pub unsafe fn routine
             
             let frame_rate_delta = Duration::from_millis(100);
             let time_delta = now.elapsed();
+
+
+            update_state(
+                game_state.clone(),
+                10,
+            );
+
+
             if time_delta > frame_rate_delta {
 
 
@@ -848,7 +873,7 @@ pub unsafe fn routine
                 
     
                 let command_buffer = record_cb(
-    
+                    game_state.clone(),
                     render_loop_command_pool.clone(),
                     render_command_buffers.clone(),
                     device.clone(),
@@ -1008,7 +1033,7 @@ struct FrameResources2 {
 
 unsafe fn record_cb
 (
-
+    game_state: Arc<Mutex<State>>,
     command_pool: Arc<vk::CommandPool>,
     command_buffers: Arc<Vec<vk::CommandBuffer>>,
     device: Arc<DeviceLoader>,
@@ -1056,6 +1081,21 @@ unsafe fn record_cb
 
     // let view = uniform.lock().unwrap().view;
     // uniform.lock().unwrap().view = Matrix4::from_axis_angle(Vector3::new(1.0, 0.0, 0.0), Deg(0.110 * *scale24.lock().unwrap())) * view;
+    let mut s = game_state.lock().unwrap();
+    let mut u = uniform.lock().unwrap();
+    u.view = Matrix4::look_at_rh(
+        Point3::new(s.camera_vehicle.position[0], s.camera_vehicle.position[1], s.camera_vehicle.position[2]),
+        // Point3::new(0.82, 0.82, 0.82), // position of the vehicle
+        // Point3::new(-0.22, -0.22, -0.22), // direction looking
+        Point3::new(s.camera_vehicle.vifo_orientation[0], s.camera_vehicle.vifo_orientation[1], s.camera_vehicle.vifo_orientation[2]),
+        // Vector3::new(0.0, 0.0, 1.0),
+        s.camera_vehicle.vifo_up,
+    );
+
+    drop(u);
+    drop(s);
+
+
 
     let data_ptr = device.map_memory(
         *uniform_buffer_memory.lock().unwrap(),
@@ -1525,7 +1565,6 @@ fn load_vehicle_model_000
 
 
 
-
     Ok((vertices_vehicle, indices))
 }
 
@@ -1628,11 +1667,47 @@ fn load_model_303
 }
 
 
+fn update_state
+(
+    state: Arc<Mutex<State>>,
+    time_delta: u128, // milliseconds
+)
+{
+    // roll moves the up vector around the vifo_orientation axis
+    let mut s = state.lock().unwrap();
+
+
+    let vifo_up = s.camera_vehicle.vifo_up;
+    let vifo_orientation = s.camera_vehicle.vifo_orientation;
+    let roll = s.camera_vehicle.control_inputs.roll;
+    s.camera_vehicle.vifo_up = Matrix3::from_axis_angle(vifo_orientation, Rad(roll)) * vifo_up;
+
+    // s.camera_vehicle.vifo_up = Matrix3::
+    s.camera_vehicle.control_inputs = ControlInputs {
+        roll: 0.0,
+        pitch: 0.0,
+        yaw: 0.0,
+    };
+    drop(s);
+
+
+}
+
+
+
+
+struct ControlInputs {
+    roll: f32, // some scalar unit
+    pitch: f32, // radians
+    yaw: f32,
+}
+
 struct CameraVehicle {
     position: Vector3<f32>,
     vifo_orientation: Vector3<f32>, // normal vector
     vifo_up: Vector3<f32>, // normal vector pointing up in the camera vehicle frame
     velocity: f32,// in the forward direction only
+    control_inputs: ControlInputs,
 }
 
 struct State {
